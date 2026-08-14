@@ -1,0 +1,241 @@
+/* =========================================
+   ClientRegister: 신규 상담자 등록 페이지 스타일
+========================================= */
+
+/* 헤더 영역 */
+.register_header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem; /* gap-3 */
+}
+
+.register_back_btn {
+  padding: 0.375rem; /* p-1.5 */
+  border-radius: var(--radius-sm, 0.125rem);
+  transition: background-color 0.2s;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.register_back_btn:hover {
+  background-color: var(--color-muted);
+}
+
+/* 폼 컨테이너 영역 */
+.register_form_container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem; /* space-y-6 = gap-6 */
+}
+
+/* 섹션 카드 */
+.register_section {
+  background-color: var(--color-card);
+  border-radius: var(--radius-md, 0.375rem);
+  padding: 1.25rem; /* p-5 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; /* space-y-4 */
+}
+
+/* 섹션 제목 */
+.register_section_title {
+  font-size: 0.875rem; /* text-sm */
+  font-weight: 600; /* font-semibold */
+  color: var(--color-foreground);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem; /* gap-2 */
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem; /* pb-2 */
+  margin-bottom: 0.25rem;
+}
+
+/* 폼 라벨 */
+.register_label {
+  display: block;
+  font-size: 0.875rem; /* text-sm */
+  font-weight: 500;
+  margin-bottom: 0.375rem; /* mb-1.5 */
+}
+
+.register_sub_label {
+  display: block;
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500;
+  margin-bottom: 0.25rem; /* mb-1 */
+  color: var(--color-muted-foreground);
+}
+
+/* 폼 입력 필드 (Input, Select, Textarea 공통) */
+.register_input {
+  width: 100%;
+  padding: 0.5rem 0.75rem; /* px-3 py-2 */
+  border-radius: var(--radius-sm, 0.125rem);
+  border: 1px solid var(--color-input);
+  background-color: var(--color-background);
+  font-size: 0.875rem; /* text-sm */
+  outline: none;
+  transition: box-shadow 0.2s;
+}
+
+.register_input:focus {
+  box-shadow: 0 0 0 2px var(--color-ring); /* focus:ring-2 */
+}
+
+.register_input:disabled,
+.register_input[readonly] {
+  background-color: var(--color-muted);
+  cursor: not-allowed;
+}
+
+.register_input.sm_padding {
+  padding: 0.375rem 0.5rem; /* px-2 py-1.5 */
+}
+
+/* 체크박스 래퍼 및 라벨 */
+.register_checkbox_group {
+  display: flex;
+  gap: 1rem; /* gap-4 */
+  margin-top: 0.5rem; /* mt-2 */
+  flex-wrap: wrap;
+}
+
+.register_checkbox_label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem; /* gap-1.5 */
+  font-size: 0.875rem; /* text-sm */
+  cursor: pointer;
+}
+
+.register_checkbox {
+  border-radius: var(--radius-sm, 0.125rem);
+  border-color: var(--color-input);
+}
+
+/* =========================================
+   레이아웃 전용 시맨틱 클래스
+========================================= */
+
+.register_row {
+  margin-top: 1rem; /* mt-4 */
+}
+
+/* 2단 그리드 */
+.register_grid_2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem; /* gap-4 */
+}
+@media (min-width: 768px) {
+  .register_grid_2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 3단 그리드 */
+.register_grid_3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem; /* gap-4 */
+}
+@media (min-width: 768px) {
+  .register_grid_3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* 세로 정렬 래퍼 (flex-col) */
+.register_field_group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem; /* gap-2 */
+}
+
+/* 가로 정렬 래퍼 (flex-row) */
+.register_flex_row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem; /* gap-2 */
+}
+
+/* 주민등록번호 옆 자동 정보 가이드 배지 */
+.register_info_badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 1rem;
+  padding: 0.375rem 0.75rem;
+  background-color: rgba(0, 0, 0, 0.03); /* bg-muted/50 대용 */
+  border-radius: 0.125rem;
+  border: 1px dashed var(--color-border);
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-5px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.register_badge_text {
+  font-size: 0.8125rem; /* 13px */
+}
+
+.register_badge_primary {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.register_badge_foreground {
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+
+.register_badge_muted {
+  color: var(--color-muted-foreground);
+}
+
+.register_badge_divider {
+  width: 1px;
+  height: 0.75rem;
+  background-color: var(--color-border);
+}
+
+.register_hint_text {
+  font-size: 0.6875rem; /* 11px */
+  color: var(--color-muted-foreground);
+}
+
+/* 토글 버튼 그룹 및 버튼 */
+.register_toggle_group {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.register_toggle_btn {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm, 0.125rem);
+  font-size: 0.8125rem; /* 13px */
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-background);
+  color: var(--color-muted-foreground);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.register_toggle_btn:hover {
+  background-color: var(--color-muted);
+}
+
+.register_toggle_btn.active {
+  background-color: #009C64; /* 제니엘 그린 */
+  border-color: #009C64;
+  color: white;
+}

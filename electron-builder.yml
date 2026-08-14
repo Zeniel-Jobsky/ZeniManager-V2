@@ -1,0 +1,97 @@
+# ============================================================
+# electron-builder.yml
+# 상담 관리 시스템 - Electron Build Configuration
+# ============================================================
+
+appId: com.zeniel.counsel-admin
+productName: 상담 관리 시스템
+copyright: Copyright © 2024 Zeniel
+
+# ─── Directories ──────────────────────────────────────────────────────────────
+directories:
+  output: release/${version}
+  buildResources: electron/icons
+
+# ─── Files to include in the app package ──────────────────────────────────────
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+# ─── Extra resources (icons, etc.) ───────────────────────────────────────────
+extraResources:
+  - from: electron/icons
+    to: icons
+    filter:
+      - "**/*"
+
+# ─── macOS Configuration ──────────────────────────────────────────────────────
+mac:
+  category: public.app-category.business
+  icon: electron/icons/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64        # Intel Mac
+        - arm64      # Apple Silicon (M1/M2/M3)
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  # Code signing (set CSC_LINK and CSC_KEY_PASSWORD env vars for production)
+  # identity: null  # Uncomment for unsigned builds during development
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+
+dmg:
+  title: ${productName} ${version}
+  icon: electron/icons/icon.icns
+  background: electron/icons/dmg-background.png
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 130
+      y: 220
+      type: file
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# ─── Windows Configuration ────────────────────────────────────────────────────
+win:
+  executableName: ZeniManager
+  icon: electron/icons/zeniel-logo.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+
+# ─── Linux Configuration (optional) ──────────────────────────────────────────
+linux:
+  icon: electron/icons/zeniel-logo.png
+  category: Office
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+
+# ─── Auto-update (GitHub Releases) ───────────────────────────────────────────
+# Uncomment and configure when ready for auto-updates:
+# publish:
+#   provider: github
+#   owner: your-github-username
+#   repo: counsel-admin-v2
+#   private: true
+
+# ─── Build options ────────────────────────────────────────────────────────────
+compression: maximum
+removePackageScripts: true
+nodeGypRebuild: false
+buildDependenciesFromSource: false

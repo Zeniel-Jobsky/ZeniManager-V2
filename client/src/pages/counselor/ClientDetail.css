@@ -1,0 +1,379 @@
+/* ClientDetail.css */
+
+.counsel_data_basic {
+  padding: 1.5rem; /* p-6 */
+  display: grid;
+  grid-template-columns: 1fr;
+  row-gap: 1.5rem; /* gap-y-6 */
+  column-gap: 3rem; /* gap-x-12 */
+  max-width: 900px;
+}
+
+@media (min-width: 640px) {
+  .counsel_data_basic {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.counsel_item {
+  display: flex;
+  flex-direction: column;
+}
+
+.counsel_label {
+  font-size: 0.75rem; /* text-xs */
+  font-weight: bold;
+  margin-bottom: 0.375rem; /* mb-1.5 */
+  display: block;
+  color: var(--color-muted-foreground);
+}
+
+.counsel_input {
+  width: 100%;
+  height: 2.5rem; /* h-10 */
+  padding: 0 0.75rem; /* px-3 */
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 0.125rem); /* rounded-sm */
+  font-size: 0.875rem; /* text-sm */
+  background-color: var(--color-background);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-sm */
+  transition: box-shadow 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+
+/* 입력창 포커스 효과 */
+.counsel_input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+input.counsel_input {
+  cursor: text;
+}
+
+.counsel_time_wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem; /* gap-2 */
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.counsel_time_input {
+  flex: 1;
+  min-width: 0; /* 부모 너비에 맞춰 줄어들 수 있도록 설정 */
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 0.125rem);
+  font-size: 0.875rem;
+  background-color: var(--color-background);
+  text-align: center;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.counsel_time_input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.counsel_time_separator {
+  font-weight: bold;
+  color: var(--color-muted-foreground);
+}
+
+/* 진단 척도 버튼 스타일 */
+.scale_group {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.scale_btn {
+  flex: 1;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 0.125rem);
+  font-size: 0.75rem;
+  font-weight: bold;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-background);
+  color: var(--color-muted-foreground);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.scale_btn:hover {
+  background-color: var(--color-muted);
+}
+
+.scale_btn.active {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* =========================================
+   추가 시맨틱 클래스 (Tailwind 대체)
+========================================= */
+
+/* 카드 섹션 */
+.counsel_section {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.375rem);
+  overflow: hidden;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+  display: flex;
+  flex-direction: column;
+}
+
+.counsel_section_header {
+  background-color: color-mix(in srgb, var(--color-muted) 30%, transparent); /* bg-muted/30 */
+  padding: 0.5rem 1rem; /* px-4 py-2 */
+  border-bottom: 1px solid var(--color-border);
+}
+
+.counsel_section_title {
+  font-size: 0.75rem; /* text-xs */
+  font-weight: bold;
+  color: var(--color-muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em; /* tracking-wider */
+}
+
+/* 인라인 필드 (보기/수정 모드) */
+.counsel_inline_label {
+  font-size: 11px; /* text-[11px] */
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  display: block;
+  margin-bottom: 0.125rem; /* mb-0.5 */
+}
+
+.counsel_inline_display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.875rem; /* text-sm */
+  padding: 0.25rem; /* p-1 */
+  margin: -0.25rem; /* -m-1 */
+  border-radius: var(--radius-sm, 0.125rem);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.group:hover .counsel_inline_display {
+  background-color: color-mix(in srgb, var(--color-muted) 30%, transparent); /* group-hover:bg-muted/30 */
+}
+
+.counsel_inline_input {
+  flex: 1;
+  font-size: 0.875rem; /* text-sm */
+  background-color: var(--color-background);
+  border: 1px solid var(--color-primary);
+  padding: 0.25rem 0.5rem; /* px-2 py-1 */
+  border-radius: var(--radius-sm, 0.125rem);
+  outline: none;
+}
+
+/* 액션 버튼 */
+.counsel_btn_edit {
+  opacity: 0;
+  padding: 0.25rem; /* p-1 */
+  color: var(--color-muted-foreground);
+  transition: all 0.2s;
+  border-radius: var(--radius-sm, 0.125rem);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.group:hover .counsel_btn_edit {
+  opacity: 1; /* group-hover:opacity-100 */
+}
+
+.counsel_btn_edit:hover {
+  color: var(--color-primary);
+}
+
+.counsel_btn_confirm {
+  padding: 0.25rem;
+  color: var(--color-primary);
+  border-radius: var(--radius-sm, 0.125rem);
+  transition: background-color 0.2s;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.counsel_btn_confirm:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); /* hover:bg-primary/10 */
+}
+
+.counsel_btn_cancel {
+  padding: 0.25rem;
+  color: var(--color-muted-foreground);
+  border-radius: var(--radius-sm, 0.125rem);
+  transition: background-color 0.2s;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.counsel_btn_cancel:hover {
+  background-color: var(--color-muted);
+}
+
+/* =========================================
+   페이지 레이아웃 및 컴포넌트 클래스
+========================================= */
+
+/* 헤더 영역 */
+.counsel_header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem; /* gap-3 */
+}
+
+.counsel_back_btn {
+  padding: 0.375rem; /* p-1.5 */
+  border-radius: var(--radius-sm, 0.125rem);
+  transition: background-color 0.2s;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.counsel_back_btn:hover {
+  background-color: var(--color-muted);
+}
+
+.counsel_avatar {
+  width: 2.5rem; /* w-10 */
+  height: 2.5rem; /* h-10 */
+  border-radius: var(--radius-sm, 0.125rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 1.125rem; /* text-lg */
+}
+
+/* 진행 상태 보드 (Progress Board) */
+.counsel_progress_board {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.375rem);
+  padding: 1.25rem; /* p-5 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+}
+
+.counsel_progress_step {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem; /* gap-2 */
+  flex: 1;
+}
+
+.counsel_step_circle {
+  width: 1.5rem; /* w-6 */
+  height: 1.5rem; /* h-6 */
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-muted);
+  background-color: var(--color-background);
+  color: var(--color-muted-foreground);
+  transition: all 0.3s;
+}
+
+.counsel_step_circle.active {
+  background-color: #ffffff;
+  border-color: #ffffff;
+  color: var(--color-primary);
+}
+
+.counsel_step_circle.current {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 20%, transparent); /* ring-4 ring-primary/20 */
+  transform: scale(1.1);
+}
+
+/* 탭 메뉴 */
+.counsel_tab_wrapper {
+  display: flex;
+  background-color: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+  border-top-left-radius: var(--radius-xl, 0.75rem);
+  border-top-right-radius: var(--radius-xl, 0.75rem);
+  padding: 0 0.5rem; /* px-2 */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.counsel_tab_btn {
+  padding: 0.75rem 1.25rem; /* px-5 py-3 */
+  font-size: 0.875rem; /* text-sm */
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  white-space: nowrap;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted-foreground);
+}
+
+.counsel_tab_btn:hover {
+  color: var(--color-primary);
+}
+
+.counsel_tab_btn.active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* 메인 컨텐츠 카드 */
+.counsel_content_card {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-top-width: 0;
+  border-bottom-left-radius: var(--radius-md, 0.375rem);
+  border-bottom-right-radius: var(--radius-md, 0.375rem);
+  padding: 1.5rem; /* p-6 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  min-height: 500px;
+}
+
+/* 상담 이력 아이템 */
+.counsel_history_item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 0.125rem);
+  padding: 1rem; /* p-4 */
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.counsel_history_item:hover {
+  background-color: color-mix(in srgb, var(--color-muted) 10%, transparent); /* bg-muted/10 */
+}
+
+/* 설문/준비도 아이템 */
+.counsel_survey_item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 0.125rem);
+  padding: 1rem; /* p-4 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
