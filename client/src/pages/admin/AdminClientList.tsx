@@ -472,9 +472,9 @@ export default function AdminClientList() {
                   <tr className="border-b border-border bg-muted/30">
                     <th 
                       className="text-left px-4 py-3 font-medium text-muted-foreground cursor-pointer hover:bg-muted/80 transition-colors"
-                      onClick={() => handleSort('client_name')}
+                      onClick={() => handleSort('name')}
                     >
-                      <div className="flex items-center gap-1.5">이름 / 인적사항 {renderSortIcon('client_name')}</div>
+                      <div className="flex items-center gap-1.5">이름 / 인적사항 {renderSortIcon('name')}</div>
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">연락처</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">담당 상담사</th>
@@ -482,12 +482,15 @@ export default function AdminClientList() {
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">참여단계</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">사업 유형</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">취업구분</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">역량등급</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">점수</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">IAP수립일</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
                         {search || branchFilter !== 'all' || stageFilter !== 'all'
                           ? '검색 결과가 없습니다.'
                           : '등록된 상담자가 없습니다.'}
@@ -530,6 +533,9 @@ export default function AdminClientList() {
                               : <span className="text-muted-foreground text-xs">미취업</span>
                             }
                           </td>
+                          <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{c.competency_grade || '-'}</td>
+                          <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{c.score ?? '-'}</td>
+                          <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{c.iap_date || '-'}</td>
                         </tr>
                       );
                     })

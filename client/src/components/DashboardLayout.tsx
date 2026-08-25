@@ -153,13 +153,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         style={{ width: sidebarOpen ? '240px' : '0px', minWidth: sidebarOpen ? '240px' : '0px' }}
       >
         {/* Logo */}
-        <div className="flex items-center justify-center px-4 py-3 border-b border-border">
+        <Link
+          href={isAdmin ? '/admin/dashboard' : '/dashboard'}
+          className="flex items-center justify-center px-4 py-3 border-b border-border cursor-pointer"
+        >
           <img
             src={ZENIEL_LOGO_SRC}
             alt="ZENIEL"
             className="h-12 object-contain"
           />
-        </div>
+        </Link>
 
         {/* Role & Affiliation badge */}
         <div className="px-4 py-3 border-b border-border bg-muted/30">

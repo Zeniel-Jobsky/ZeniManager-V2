@@ -13,7 +13,7 @@ import {
 } from '../_shared/employment-success.ts';
 
 type RequestBody = {
-  clientId?: number;
+  clientId?: string;
   backfill?: boolean;
   limit?: number;
   openAIKey?: string;
@@ -24,22 +24,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// NOTE(2026-08-26): public.clients 스키마 기준 (id는 uuid).
 const CLIENT_SELECT_FIELDS = [
-  'client_id',
-  'client_name',
+  'id',
+  'name',
   'age',
   'education_level',
-  'school_name',
+  'school',
   'major',
-  'desired_job_1',
-  'desired_job_2',
-  'desired_job_3',
+  'desired_job',
   'participation_stage',
-  'hire_place',
-  'hire_type',
-  'hire_job_type',
-  'hire_date',
-  'job_place_start',
+  'employer',
+  'employment_type',
+  'job_title',
+  'employment_date',
 ].join(', ');
 
 Deno.serve(async request => {
@@ -74,11 +72,11 @@ Deno.serve(async request => {
       });
     }
 
-    if (!Number.isFinite(body.clientId)) {
+    if (!body.clientId) {
       return json({ error: 'clientId가 필요합니다.' }, 400);
     }
 
-    const client = await fetchClientById(admin, Number(body.clientId));
+    const client = await fetchClientById(admin, body.clientId);
     if (!client) {
       return json({ error: '상담자 데이터를 찾을 수 없습니다.' }, 404);
     }
@@ -87,7 +85,7 @@ Deno.serve(async request => {
     const result = await syncOneClient(admin, client, apiKey);
 
     console.log('[sync-employment-success-case] single', {
-      clientId: client.client_id,
+      clientId: client.id,
       status: result.status,
     });
 
@@ -130,12 +128,12 @@ async function readBody(request: Request): Promise<RequestBody> {
 
 async function fetchClientById(
   admin: ReturnType<typeof createClient>,
-  clientId: number,
+  clientId: string,
 ): Promise<EmploymentSourceRow | null> {
   const { data, error } = await admin
-    .from('client')
+    .from('clients')
     .select(CLIENT_SELECT_FIELDS)
-    .eq('client_id', clientId)
+    .eq('id', clientId)
     .maybeSingle();
 
   if (error) throw error;
@@ -147,11 +145,11 @@ async function fetchBackfillClients(
   limit: number,
 ): Promise<EmploymentSourceRow[]> {
   const { data, error } = await admin
-    .from('client')
+    .from('clients')
     .select(CLIENT_SELECT_FIELDS)
     .eq('participation_stage', '취업완료')
-    .not('hire_place', 'is', null)
-    .order('client_id', { ascending: false })
+    .not('employer', 'is', null)
+    .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) throw error;
@@ -162,18 +160,18 @@ async function syncOneClient(
   admin: ReturnType<typeof createClient>,
   client: EmploymentSourceRow,
   apiKey: string | null,
-): Promise<{ status: 'activated' | 'deactivated'; sourceClientId: number }> {
+): Promise<{ status: 'activated' | 'deactivated'; sourceClientId: string }> {
   if (!isEmploymentSuccessCandidate(client)) {
     const { error } = await admin
       .from('employment_success_case')
       .update({ is_active: false })
-      .eq('source_client_id', client.client_id);
+      .eq('source_client_id', client.id);
 
     if (error) throw error;
 
     return {
       status: 'deactivated',
-      sourceClientId: client.client_id,
+      sourceClientId: client.id,
     };
   }
 
@@ -183,24 +181,24 @@ async function syncOneClient(
 
   const rawText = buildEmbeddingText(client, { includeEmployment: true });
   const embedding = await createEmbedding(apiKey, rawText);
-  const employmentDate = parseEmploymentDate(client.job_place_start, client.hire_date);
+  const employmentDate = parseEmploymentDate(client.employment_date);
 
   const { error } = await admin
     .from('employment_success_case')
     .upsert({
-      source_client_id: client.client_id,
-      masked_client_name: maskKoreanName(client.client_name),
+      source_client_id: client.id,
+      masked_client_name: maskKoreanName(client.name),
       age: client.age,
       age_decade: toAgeDecade(client.age),
       education_level: client.education_level,
-      school_name: client.school_name,
+      school_name: client.school,
       major: client.major,
-      desired_job_1: client.desired_job_1,
-      desired_job_2: client.desired_job_2,
-      desired_job_3: client.desired_job_3,
-      employment_company: client.hire_place,
-      employment_type: client.hire_type,
-      employment_job_type: client.hire_job_type,
+      desired_job_1: client.desired_job,
+      desired_job_2: null,
+      desired_job_3: null,
+      employment_company: client.employer,
+      employment_type: client.employment_type,
+      employment_job_type: client.job_title,
       employment_date: employmentDate,
       source_participation_stage: client.participation_stage ?? '취업완료',
       raw_text_used_for_embedding: rawText,
@@ -215,7 +213,7 @@ async function syncOneClient(
 
   return {
     status: 'activated',
-    sourceClientId: client.client_id,
+    sourceClientId: client.id,
   };
 }
 

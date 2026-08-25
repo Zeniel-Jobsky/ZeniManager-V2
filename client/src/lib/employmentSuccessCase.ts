@@ -1,76 +1,15 @@
 import {
   getSupabaseAnonKey,
-  getSupabaseClient,
   getOpenAIKey,
   getSupabaseUrl,
   isSupabaseConfigured,
 } from './supabase';
 
-const CLIENT_EMPLOYMENT_SELECT_FIELDS = `
-  client_id,
-  participation_stage,
-  desired_job_1,
-  desired_job_2,
-  desired_job_3,
-  hire_type,
-  hire_place,
-  hire_job_type,
-  hire_payment,
-  hire_date,
-  job_place_start
-`;
-
-type LiveEmploymentSnapshotRecord = {
-  client_id: number;
-  participation_stage: string | null;
-  desired_job_1: string | null;
-  desired_job_2: string | null;
-  desired_job_3: string | null;
-  hire_type: string | null;
-  hire_place: string | null;
-  hire_job_type: string | null;
-  hire_payment: string | null;
-  hire_date: string | null;
-  job_place_start: string | null;
-};
-
-export interface ClientEmploymentSnapshotFields {
-  clientId: string;
-  participationStage: string | null;
-  desiredJob1: string | null;
-  desiredJob2: string | null;
-  desiredJob3: string | null;
-  employmentType: string | null;
-  employmentCompany: string | null;
-  employmentJobType: string | null;
-  employmentSalary: string | null;
-  employmentDate: string | null;
-  hireDate: string | null;
-}
-
-export interface ClientEmploymentSnapshotUpdateInput {
-  participationStage?: string | null;
-  desiredJob1?: string | null;
-  desiredJob2?: string | null;
-  desiredJob3?: string | null;
-  employmentType?: string | null;
-  employmentCompany?: string | null;
-  employmentJobType?: string | null;
-  employmentSalary?: string | null;
-  employmentDate?: string | null;
-  hireDate?: string | null;
-}
-
-export interface EmploymentSuccessMetadataPatchInput {
-  clientId: string | number;
-  participationStage?: string | null;
-  hirePlace?: string | null;
-  hireType?: string | null;
-  hireJobType?: string | null;
-  hirePayment?: string | null;
-  jobPlaceStart?: string | null;
-  hireDate?: string | null;
-}
+// NOTE(2026-08-26): public.clients 스키마(uuid PK)로 이관. clients.id를 그대로 쓰면 되므로
+// 예전처럼 client 테이블에 별도로 스냅샷 필드를 써주는 과정이 필요 없어졌다 —
+// api.ts의 createClient/updateClient가 이미 employer/job_title/employment_type/salary/
+// employment_date/desired_job을 clients 테이블에 직접 저장하기 때문에, 이 파일은 Edge
+// Function 호출(동기화/검색)만 담당한다.
 
 export interface EmploymentSuccessCaseMatch {
   id: string;
@@ -95,88 +34,15 @@ export interface EmploymentSuccessCaseSearchResponse {
   reason: string | null;
 }
 
-export async function fetchClientEmploymentFields(
-  clientId: string | number,
-): Promise<ClientEmploymentSnapshotFields | null> {
-  const client = requireConfiguredSupabaseClient('내담자 취업 정보 조회');
-
-  const { data, error } = await client
-    .from('client')
-    .select(CLIENT_EMPLOYMENT_SELECT_FIELDS)
-    .eq('client_id', toNumericClientId(clientId))
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message || '내담자 취업 정보를 조회하지 못했습니다.');
-  }
-
-  return data ? normalizeClientEmploymentSnapshot(data as LiveEmploymentSnapshotRecord) : null;
-}
-
-export async function updateClientEmploymentSnapshotFields(
-  clientId: string | number,
-  payload: ClientEmploymentSnapshotUpdateInput,
-): Promise<ClientEmploymentSnapshotFields> {
-  const client = requireConfiguredSupabaseClient('내담자 취업 정보 저장');
-  const updateRecord = buildClientEmploymentUpdateRecord(payload);
-
-  if (Object.keys(updateRecord).length === 0) {
-    const existing = await fetchClientEmploymentFields(clientId);
-    if (!existing) {
-      throw new Error('내담자 취업 정보를 찾을 수 없습니다.');
-    }
-    return existing;
-  }
-
-  const { data, error } = await client
-    .from('client')
-    .update({
-      ...updateRecord,
-      update_at: new Date().toISOString(),
-    })
-    .eq('client_id', toNumericClientId(clientId))
-    .select(CLIENT_EMPLOYMENT_SELECT_FIELDS)
-    .single();
-
-  if (error) {
-    throw new Error(error.message || '내담자 취업 정보를 저장하지 못했습니다.');
-  }
-
-  return normalizeClientEmploymentSnapshot(data as LiveEmploymentSnapshotRecord);
-}
-
-export async function syncEmploymentSuccessCase(clientId: string | number): Promise<void> {
+export async function syncEmploymentSuccessCase(clientId: string): Promise<void> {
   await invokeEmploymentEdgeFunction('sync-employment-success-case', {
-    clientId: toNumericClientId(clientId),
+    clientId,
     openAIKey: getOpenAIKey(),
   });
 }
 
-export async function updateClientEmploymentSnapshotAndSync(
-  clientId: string | number,
-  payload: ClientEmploymentSnapshotUpdateInput,
-): Promise<ClientEmploymentSnapshotFields> {
-  const snapshot = await updateClientEmploymentSnapshotFields(clientId, payload);
-  await syncEmploymentSuccessCase(clientId);
-  return snapshot;
-}
-
-export async function patchEmploymentSuccessMetadata(
-  input: EmploymentSuccessMetadataPatchInput,
-): Promise<ClientEmploymentSnapshotFields> {
-  return updateClientEmploymentSnapshotAndSync(input.clientId, {
-    participationStage: input.participationStage,
-    employmentCompany: input.hirePlace,
-    employmentType: input.hireType,
-    employmentJobType: input.hireJobType,
-    employmentSalary: input.hirePayment,
-    employmentDate: input.jobPlaceStart,
-    hireDate: input.hireDate,
-  });
-}
-
 export async function searchEmploymentSuccessCases(
-  clientId: string | number,
+  clientId: string,
   limit = 3,
 ): Promise<EmploymentSuccessCaseSearchResponse> {
   if (!isSupabaseConfigured()) {
@@ -191,7 +57,7 @@ export async function searchEmploymentSuccessCases(
   const data = await invokeEmploymentEdgeFunction<Record<string, unknown>>(
     'search-employment-success-case',
     {
-      clientId: toNumericClientId(clientId),
+      clientId,
       limit,
       openAIKey: getOpenAIKey(),
     },
@@ -247,25 +113,6 @@ export function toAgeDecade(age: number | null | undefined): string {
   return `${Math.floor(age / 10) * 10}대`;
 }
 
-export function buildClientEmploymentUpdateRecord(
-  payload: ClientEmploymentSnapshotUpdateInput,
-): Record<string, string | null> {
-  const updateRecord: Record<string, string | null> = {};
-
-  assignNormalizedString(updateRecord, 'participation_stage', payload.participationStage);
-  assignNormalizedString(updateRecord, 'desired_job_1', payload.desiredJob1);
-  assignNormalizedString(updateRecord, 'desired_job_2', payload.desiredJob2);
-  assignNormalizedString(updateRecord, 'desired_job_3', payload.desiredJob3);
-  assignNormalizedString(updateRecord, 'hire_type', payload.employmentType);
-  assignNormalizedString(updateRecord, 'hire_place', payload.employmentCompany);
-  assignNormalizedString(updateRecord, 'hire_job_type', payload.employmentJobType);
-  assignNormalizedString(updateRecord, 'hire_payment', payload.employmentSalary);
-  assignNormalizedDate(updateRecord, 'job_place_start', payload.employmentDate);
-  assignNormalizedDate(updateRecord, 'hire_date', payload.hireDate);
-
-  return updateRecord;
-}
-
 function normalizeEmploymentSuccessCaseMatch(value: unknown): EmploymentSuccessCaseMatch | null {
   if (!value || typeof value !== 'object') return null;
 
@@ -297,37 +144,6 @@ function normalizeEmploymentSuccessCaseMatch(value: unknown): EmploymentSuccessC
   };
 }
 
-function normalizeClientEmploymentSnapshot(
-  row: LiveEmploymentSnapshotRecord,
-): ClientEmploymentSnapshotFields {
-  return {
-    clientId: String(row.client_id),
-    participationStage: normalizeText(row.participation_stage),
-    desiredJob1: normalizeText(row.desired_job_1),
-    desiredJob2: normalizeText(row.desired_job_2),
-    desiredJob3: normalizeText(row.desired_job_3),
-    employmentType: normalizeText(row.hire_type),
-    employmentCompany: normalizeText(row.hire_place),
-    employmentJobType: normalizeText(row.hire_job_type),
-    employmentSalary: normalizeText(row.hire_payment),
-    employmentDate: normalizeDateOnly(row.job_place_start),
-    hireDate: normalizeDateOnly(row.hire_date),
-  };
-}
-
-function requireConfiguredSupabaseClient(scopeLabel: string) {
-  if (!isSupabaseConfigured()) {
-    throw new Error(`Supabase가 설정되지 않아 ${scopeLabel}를 진행할 수 없습니다.`);
-  }
-
-  const client = getSupabaseClient();
-  if (!client) {
-    throw new Error('Supabase client를 초기화할 수 없습니다.');
-  }
-
-  return client;
-}
-
 async function invokeEmploymentEdgeFunction<T>(
   functionName: string,
   payload: Record<string, unknown>,
@@ -356,32 +172,6 @@ async function invokeEmploymentEdgeFunction<T>(
   }
 
   return parsed as T;
-}
-
-function toNumericClientId(value: string | number): number {
-  const clientId = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(clientId) || clientId <= 0) {
-    throw new Error('유효한 상담자 ID가 필요합니다.');
-  }
-  return clientId;
-}
-
-function assignNormalizedString(
-  target: Record<string, string | null>,
-  key: string,
-  value: string | null | undefined,
-): void {
-  if (value === undefined) return;
-  target[key] = normalizeText(value);
-}
-
-function assignNormalizedDate(
-  target: Record<string, string | null>,
-  key: string,
-  value: string | null | undefined,
-): void {
-  if (value === undefined) return;
-  target[key] = normalizeDateOnly(value);
 }
 
 function normalizeText(value: string | null | undefined): string | null {

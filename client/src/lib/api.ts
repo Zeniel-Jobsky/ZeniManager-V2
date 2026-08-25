@@ -71,6 +71,46 @@ async function fetchAllPages<T>(
   return allRows;
 }
 
+/**
+ * clients/sessions/memo_cards.counselor_id는 로그인 UUID(auth.uid())가 아니라
+ * public.counselors(id)를 참조한다 (FK 제약으로 확인됨, 2026-08-26).
+ * 앱 곳곳에서 로그인 계정의 auth uid(예: user.counselorId, public.user.user_id)를
+ * "담당 상담사"로 넘겨받는데, 이 함수로 실제 counselors.id를 찾아서 써야 한다.
+ * 해당 auth uid가 counselors 테이블에 연결(auth_user_id)돼 있지 않으면 null을 반환한다.
+ */
+async function resolveCounselorRowId(authUserId: string): Promise<string | null> {
+  const { data, error } = await runQuery<{ id: string } | null>(
+    '상담사 프로필(counselors) 조회',
+    sb().from('counselors').select('id').eq('auth_user_id', authUserId).maybeSingle(),
+  );
+  if (error) throw error;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+const UNMATCHABLE_UUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * clients.gender에는 '남'/'여'만 허용하는 CHECK 제약이 있다. 폼 등 일부 호출부가
+ * 여전히 옛 코드값('M'/'F')을 보내는 경우가 있어 여기서 정규화한다.
+ */
+function normalizeGender(value: unknown): '남' | '여' | null {
+  if (value === '남' || value === '여') return value;
+  if (value === 'M' || value === 'male') return '남';
+  if (value === 'F' || value === 'female') return '여';
+  return null;
+}
+
+/**
+ * 엑셀 등에서 마이그레이션된 텍스트 값에 눈에 안 보이는 앞뒤 공백이 섞여 있는 경우가 있다.
+ * `participation_stage === '취업완료'` 같은 정확 비교(드롭다운 선택, KPI 필터 등)가 공백 때문에
+ * 조용히 어긋나는 걸 막기 위해 읽어올 때 항상 trim한다.
+ */
+function trimOrNull(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return value ?? null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function isMissingSchemaError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -270,6 +310,10 @@ const CLIENT_SELECT_FIELDS = `
 export async function fetchClients(counselorId?: string): Promise<ClientRow[]> {
   if (!isSupabaseConfigured()) return [];
 
+  // counselorId는 로그인 계정의 auth uid로 넘어오므로, 실제 clients.counselor_id가
+  // 참조하는 counselors.id로 변환해야 한다.
+  const resolvedCounselorRowId = counselorId ? await resolveCounselorRowId(counselorId) : null;
+
   const rows = await fetchAllPages<LiveClientRecord>('고객 목록 조회', (from, to) => {
     let q = sb()
       .from('clients')
@@ -277,7 +321,7 @@ export async function fetchClients(counselorId?: string): Promise<ClientRow[]> {
       .order('created_at', { ascending: false })
       .range(from, to);
 
-    if (counselorId) q = q.eq('counselor_id', counselorId);
+    if (counselorId) q = q.eq('counselor_id', resolvedCounselorRowId ?? UNMATCHABLE_UUID);
     return q;
   });
 
@@ -307,11 +351,20 @@ export async function fetchClientById(id: string): Promise<ClientRow | null> {
 export async function createClient(input: any): Promise<ClientRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
 
+  // input.counselor_id는 로그인 계정의 auth uid로 넘어오므로, FK가 요구하는
+  // counselors.id로 변환해야 한다 (안 그러면 FK 위반으로 INSERT가 실패한다).
+  const resolvedCounselorRowId = input.counselor_id
+    ? await resolveCounselorRowId(input.counselor_id)
+    : null;
+  if (input.counselor_id && !resolvedCounselorRowId) {
+    throw new Error('로그인한 상담사 계정이 counselors 테이블과 연결되어 있지 않습니다. 관리자에게 문의하세요.');
+  }
+
   const payload = {
     name: input.name,
-    counselor_id: input.counselor_id,
+    counselor_id: resolvedCounselorRowId,
     age: input.age,
-    gender: input.gender,
+    gender: normalizeGender(input.gender),
     phone: input.phone,
     address: input.address,
     desired_job: input.desired_job,
@@ -323,6 +376,11 @@ export async function createClient(input: any): Promise<ClientRow> {
     participation_stage: input.participation_stage,
     counsel_notes: input.counsel_notes,
     branch: input.branch,
+    employer: input.employer,
+    job_title: input.job_title,
+    employment_type: input.employment_type,
+    salary: input.salary,
+    employment_date: input.employment_date,
   };
 
   const { data, error } = await runQuery<LiveClientRecord>(
@@ -341,9 +399,12 @@ export async function createClient(input: any): Promise<ClientRow> {
 export async function updateClient(id: string, updates: Partial<LiveClientRecord>): Promise<ClientRow> {
   try {
     if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
+    const normalizedUpdates = 'gender' in updates
+      ? { ...updates, gender: normalizeGender((updates as any).gender) }
+      : updates;
     const { data, error } = await sb()
       .from('clients')
-      .update(updates)
+      .update(normalizedUpdates)
       .eq('id', id)
       .select(CLIENT_SELECT_FIELDS)
       .single();
@@ -399,9 +460,16 @@ export async function createSession(input: SessionInsert): Promise<SessionRow> {
   if (!input.client_id) throw new Error('유효한 상담자 ID가 아닙니다.');
   if (!input.counselor_id) throw new Error('로그인한 상담사 정보가 없습니다.');
 
+  // input.counselor_id는 로그인 계정의 auth uid로 넘어오므로, FK가 요구하는
+  // counselors.id로 변환해야 한다.
+  const resolvedCounselorRowId = await resolveCounselorRowId(input.counselor_id);
+  if (!resolvedCounselorRowId) {
+    throw new Error('로그인한 상담사 계정이 counselors 테이블과 연결되어 있지 않습니다. 관리자에게 문의하세요.');
+  }
+
   const payload: any = {
     client_id: input.client_id,
-    counselor_id: input.counselor_id,
+    counselor_id: resolvedCounselorRowId,
     date: input.date,
     content: input.content || null,
     type: input.type || '상담기록',
@@ -689,12 +757,17 @@ export async function updateSurvey(id: string, input: any): Promise<SurveyRow> {
 
 export async function fetchMemoCards(counselorId: string): Promise<MemoCardRow[]> {
   if (!isSupabaseConfigured()) return [];
+
+  // counselorId는 로그인 계정의 auth uid로 넘어오므로, memo_cards.counselor_id가
+  // 참조하는 counselors.id로 변환해야 한다.
+  const resolvedCounselorRowId = await resolveCounselorRowId(counselorId);
+
   const { data, error } = await runQuery<MemoCardRow[]>(
     '메모 카드 조회',
     sb()
       .from('memo_cards')
       .select('*')
-      .eq('counselor_id', counselorId)
+      .eq('counselor_id', resolvedCounselorRowId ?? UNMATCHABLE_UUID)
       .order('sort_order', { ascending: true }),
   );
   if (error) throw error;
@@ -778,7 +851,7 @@ function liveClientToRow(row: LiveClientRecord): ClientRow {
     gender: row.gender ?? null,
     business_type: row.business_type ?? null,
     participation_type: row.participation_type ?? null,
-    participation_stage: row.participation_stage ?? null,
+    participation_stage: trimOrNull(row.participation_stage),
     competency_grade: row.competency_grade ?? null,
     recognition_date: row.recognition_date ?? null,
     desired_job: row.desired_job ?? null,

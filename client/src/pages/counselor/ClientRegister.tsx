@@ -6,10 +6,11 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { ChevronLeft, User, Phone, Mail, Calendar, Building2, Briefcase, BookOpen, Car, MapPin, Target, Home, FileText } from 'lucide-react';
+import { isEmploymentCompletedStage } from '@shared/const';
 import { usePageGuard } from '@/hooks/usePageGuard';
 import { PARTICIPATION_TYPE_OPTIONS } from '@/const';
 import { createClient } from '@/lib/api';
-import { updateClientEmploymentSnapshotAndSync } from '@/lib/employmentSuccessCase';
+import { syncEmploymentSuccessCase } from '@/lib/employmentSuccessCase';
 import DaumPostcode from 'react-daum-postcode';
 import { encrypt } from '@/lib/crypto'; // 암호화 유틸리티 추가
 import './ClientRegister.css'; // 새로 생성한 시맨틱 CSS import
@@ -68,7 +69,7 @@ export default function ClientRegister() {
 
   const [loading, setLoading] = useState(false);
   const [showPostcode, setShowPostcode] = useState(false);
-  const isEmploymentCompleted = form.processStage === '취업완료';
+  const isEmploymentCompleted = isEmploymentCompletedStage(form.processStage);
 
   const update = (field: string, value: any) => setForm(f => ({ ...f, [field]: value }));
 
@@ -237,23 +238,20 @@ export default function ClientRegister() {
         work_ex_graduate: form.work_ex_graduate ? parseInt(form.work_ex_graduate, 10) : null,
         memo: form.notes || null,
         counselor_id: user?.counselorId || null,
+        // NOTE(2026-08-26): clients 스키마에는 희망직무/취업 정보가 각각 단일 필드로만
+        // 존재한다 (desired_job_2/3, hire_* 세부 항목은 저장할 곳이 없음 — 1순위/대표값만 저장).
+        desired_job: form.desired_job_1 || null,
+        employer: form.hire_place || null,
+        job_title: form.hire_job_type || null,
+        employment_type: form.hire_type || null,
+        salary: form.hire_payment || null,
+        employment_date: form.employment_date || null,
       } as any);
 
       let syncFailed = false;
       if (isEmploymentCompleted) {
         try {
-          await updateClientEmploymentSnapshotAndSync(createdClient.id, {
-            participationStage: form.processStage || null,
-            desiredJob1: form.desired_job_1 || null,
-            desiredJob2: form.desired_job_2 || null,
-            desiredJob3: form.desired_job_3 || null,
-            employmentType: form.hire_type || null,
-            employmentCompany: form.hire_place || null,
-            employmentJobType: form.hire_job_type || null,
-            employmentSalary: form.hire_payment || null,
-            employmentDate: form.employment_date || null,
-            hireDate: form.employment_date || null,
-          });
+          await syncEmploymentSuccessCase(createdClient.id);
         } catch (syncError) {
           console.error('Failed to sync employment success case after registration:', syncError);
           syncFailed = true;
@@ -670,18 +668,21 @@ export default function ClientRegister() {
 
           <div className="register_row register_field_group">
             <label className="register_label">상담 단계</label>
-            <div className="register_toggle_group">
-              {['초기상담', '심층상담', '취업지원', '취업완료', '사후관리'].map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => update('processStage', s)}
-                  className={`register_toggle_btn ${form.processStage === s ? 'active' : ''}`}
-                >
-                  {s}
-                </button>
+            {/* NOTE(2026-08-26): 실데이터의 참여단계가 고정 5개보다 훨씬 다양해서(구직활동/중단/
+                만종 등 30여 종) 버튼 선택 대신 자유 텍스트 + datalist 자동완성으로 바꿨다. */}
+            <input
+              type="text"
+              list="participation-stage-suggestions"
+              value={form.processStage}
+              onChange={e => update('processStage', e.target.value)}
+              placeholder="예: 초기상담, 심층상담, 취업지원, 취업완료, 구직활동, 사후관리..."
+              className="register_input"
+            />
+            <datalist id="participation-stage-suggestions">
+              {['초기상담', '심층상담', '취업지원', '취업완료', '구직활동', '사후관리', '중단', '만종', '만료'].map(s => (
+                <option key={s} value={s} />
               ))}
-            </div>
+            </datalist>
           </div>
 
           <div className="register_row register_field_group">

@@ -3,6 +3,7 @@
  * Design: 모던 웰니스 미니멀리즘
  */
 import { useState, useEffect, useMemo } from 'react';
+import { isEmploymentCompletedStage } from '@shared/const';
 import { usePageGuard } from '@/hooks/usePageGuard';
 import { fetchClients, fetchCounselors } from '@/lib/api';
 import type { ClientRow, CounselorRow } from '@/lib/supabase';
@@ -95,7 +96,7 @@ export default function AdminDashboard() {
 
   // 3. KPI 수치 계산 (hire_type 스키마 반영)
   const totalCount = filteredClients.length;
-  const completedCount = filteredClients.filter(c => !!c.employment_type || c.participation_stage === '취업완료').length;
+  const completedCount = filteredClients.filter(c => !!c.employment_type || isEmploymentCompletedStage(c.participation_stage)).length;
   const inProgress = totalCount - completedCount;
   const avgRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
@@ -192,7 +193,7 @@ export default function AdminDashboard() {
         const b = counselor?.department || c.branch || '미지정';
         if (!map[b]) map[b] = { total: 0, done: 0, counselorCount: 0 };
         map[b].total++;
-        if (!!c.employment_type || c.participation_stage === '취업완료') map[b].done++;
+        if (!!c.employment_type || isEmploymentCompletedStage(c.participation_stage)) map[b].done++;
       });
 
       return Object.entries(map).map(([name, v]) => ({
@@ -203,7 +204,7 @@ export default function AdminDashboard() {
       const branchCounselors = counselors.filter(c => c.department === selectedBranch);
       return branchCounselors.map(con => {
         const conClients = filteredClients.filter(c => c.counselor_id === con.user_id);
-        const done = conClients.filter(c => !!c.employment_type || c.participation_stage === '취업완료').length;
+        const done = conClients.filter(c => !!c.employment_type || isEmploymentCompletedStage(c.participation_stage)).length;
         return {
           name: con.user_name, total: conClients.length, done: done,
           rate: conClients.length > 0 ? Math.round((done / conClients.length) * 100) : 0

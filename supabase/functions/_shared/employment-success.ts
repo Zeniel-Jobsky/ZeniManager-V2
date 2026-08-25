@@ -1,24 +1,23 @@
+// NOTE(2026-08-26): public.clients 스키마 기준으로 재작성.
+// source_client_id는 이제 uuid이며 public.clients(id)를 참조한다.
 export type EmploymentSourceRow = {
-  client_id: number;
-  client_name: string | null;
+  id: string;
+  name: string | null;
   age: number | null;
   education_level: string | null;
-  school_name: string | null;
+  school: string | null;
   major: string | null;
-  desired_job_1: string | null;
-  desired_job_2: string | null;
-  desired_job_3: string | null;
+  desired_job: string | null;
   participation_stage: string | null;
-  hire_place: string | null;
-  hire_type: string | null;
-  hire_job_type: string | null;
-  hire_date: string | null;
-  job_place_start: string | null;
+  employer: string | null;
+  employment_type: string | null;
+  job_title: string | null;
+  employment_date: string | null;
 };
 
 export type SearchCandidateRow = {
   id: number;
-  source_client_id: number;
+  source_client_id: string;
   masked_client_name: string;
   age_decade: string;
   education_level: string | null;
@@ -57,22 +56,18 @@ export function toAgeDecade(age: number | null | undefined): string {
   return `${Math.floor(age / 10) * 10}대`;
 }
 
-export function parseEmploymentDate(
-  jobPlaceStart: string | null | undefined,
-  hireDate: string | null | undefined,
-): string | null {
-  return normalizeDate(jobPlaceStart) ?? normalizeDate(hireDate);
+export function parseEmploymentDate(value: string | null | undefined): string | null {
+  return normalizeDate(value);
 }
 
 export function isEmploymentSuccessCandidate(row: EmploymentSourceRow): boolean {
-  return normalizeText(row.participation_stage) === '취업완료' && Boolean(normalizeText(row.hire_place));
+  return normalizeText(row.participation_stage) === '취업완료' && Boolean(normalizeText(row.employer));
 }
 
 export function buildEmbeddingText(
   row: EmploymentSourceRow,
   options: { includeEmployment: boolean },
 ): string {
-  const desiredJobs = normalizeList([row.desired_job_1, row.desired_job_2, row.desired_job_3]);
   const sentences: string[] = [
     options.includeEmployment ? '취업 성공 사례 프로필입니다.' : '상담 대상자 프로필입니다.',
     `연령대는 ${toAgeDecade(row.age)}입니다.`,
@@ -81,25 +76,24 @@ export function buildEmbeddingText(
   const education = normalizeText(row.education_level);
   if (education) sentences.push(`최종 학력은 ${education}입니다.`);
 
-  const school = normalizeText(row.school_name);
+  const school = normalizeText(row.school);
   if (school) sentences.push(`학교명은 ${school}입니다.`);
 
   const major = normalizeText(row.major);
   if (major) sentences.push(`전공은 ${major}입니다.`);
 
-  if (desiredJobs.length > 0) {
-    sentences.push(`희망 직무는 ${desiredJobs.join(', ')}입니다.`);
-  }
+  const desiredJob = normalizeText(row.desired_job);
+  if (desiredJob) sentences.push(`희망 직무는 ${desiredJob}입니다.`);
 
   if (options.includeEmployment) {
-    const company = normalizeText(row.hire_place);
+    const company = normalizeText(row.employer);
     if (company) sentences.push(`최종 취업처는 ${company}입니다.`);
 
-    const jobType = normalizeText(row.hire_job_type);
+    const jobType = normalizeText(row.job_title);
     if (jobType) sentences.push(`취업 직무는 ${jobType}입니다.`);
 
-    const hireType = normalizeText(row.hire_type);
-    if (hireType) sentences.push(`고용 형태는 ${hireType}입니다.`);
+    const employmentType = normalizeText(row.employment_type);
+    if (employmentType) sentences.push(`고용 형태는 ${employmentType}입니다.`);
   }
 
   return sentences.join(' ');

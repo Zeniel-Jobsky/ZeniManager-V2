@@ -43,12 +43,11 @@ const PRIMARY = '#009C64';
 type ClientTab = 'manage' | 'history' | 'input' | 'survey' | 'summary' | 'chat';
 
 const SUCCESS_CASE_SYNC_FIELDS = new Set([
-  'hire_date',
-  'hire_place',
-  'hire_job_type',
-  'hire_payment',
+  'employment_date',
+  'employer',
+  'job_title',
+  'salary',
   'employment_type',
-  'employment_duration',
   'participation_stage'
 ]);
 
@@ -414,99 +413,47 @@ export default function ClientDetail() {
     try {
       const updates: any = {};
       
+      // NOTE(2026-08-26): public.clients 스키마 기준. DB 컬럼명이 ClientRow 필드명과
+      // 대부분 동일해서(_code/_encrypted 접미사 없음) dbKey는 기본적으로 필드명 그대로 쓰고,
+      // 예외(표시용으로 이름이 다른 필드, 값 포맷 변환이 필요한 필드)만 처리한다.
       const processField = (f: string, v: any) => {
         let dbKey = f;
         let val: any = v;
 
-        if (f === 'memo') return { dbKey: 'memo', val: v };
-        if (f === 'name') dbKey = 'client_name';
-        if (f === 'phone') dbKey = 'phone_encrypted';
-        if (f === 'gender') {
-          dbKey = 'gender_code';
-          val = v === '남' ? 'M' : 'F';
-        }
-        if (f === 'business_type') {
-          dbKey = 'business_type_code';
-          val = (!v || v.toString().trim() === '') ? null : Number(v);
-        }
-        
-        // Handle field mapping consistency
-        const mapping: Record<string, string> = {
-          'school_name': 'school_name', 
-          'major': 'major', 
-          'email': 'email',
-          'address_1': 'address_1', 'address_2': 'address_2',
-          'birth_date': 'birth_date', 'iap_to': 'iap_to', 'MBTI': 'MBTI',
-          'participation_stage': 'participation_stage',
-          'assignment_type': 'assignment_type', 'capa': 'capa',
-          'participation_type': 'participation_type', 
-          'rediagnosis_yn': 'retest_stat',
-          'retest_score': 'retest_stat',
-          'rediagnosis_date': 'retest_date',
-          'desired_job_1': 'desired_job_1',
-          'desired_job_2': 'desired_job_2',
-          'desired_job_3': 'desired_job_3',
-          'desired_area_1': 'desired_area_1',
-          'desired_area_2': 'desired_area_2',
-          'desired_area_3': 'desired_area_3',
-          'hire_place': 'hire_place',
-          'hire_job_type': 'hire_job_type',
-          'hire_date': 'hire_date',
-          'hire_payment': 'hire_payment',
-          'continue_serv_1_date': 'continue_serv_1_date',
-          'continue_serv_1_stat': 'continue_serv_1_stat',
-          'continue_serv_6_date': 'continue_serv_6_date',
-          'continue_serv_6_stat': 'continue_serv_6_stat',
-          'continue_serv_12_date': 'continue_serv_12_date',
-          'continue_serv_12_stat': 'continue_serv_12_stat',
-          'continue_serv_18_date': 'continue_serv_18_date',
-          'continue_serv_18_stat': 'continue_serv_18_stat'
-        };
-        
-        if (mapping[f]) dbKey = mapping[f];
-        
-        // Global empty string to null conversion for dropdowns/inputs
+        if (f === 'counsel_notes') return { dbKey: 'counsel_notes', val: v };
+        // "보유점수" 필드는 rediagnosis_yn 값을 보여주는 표시용 필드명이라 실제 저장은 rediagnosis_yn으로.
+        if (f === 'retest_score') dbKey = 'rediagnosis_yn';
+
         if (v === '' || v === null || v === undefined) {
-           val = null;
+          val = null;
         } else {
-            // Numeric conversions
-            if (['age', 'retest_stat', 'rediagnosis_yn', 'retest_score', 'desired_payment', 'salary', 'hire_payment', 
-                'continue_serv_1_stat', 'continue_serv_6_stat', 'continue_serv_12_stat', 'continue_serv_18_stat'].includes(f)) {
-              const num = Number(v.toString().replace(/[^0-9.-]/g, ''));
-              val = isNaN(num) ? null : num;
-            }
+          if (f === 'age') {
+            const num = Number(v.toString().replace(/[^0-9.-]/g, ''));
+            val = isNaN(num) ? null : num;
+          }
 
-            // Phone formatting (01012345678 -> 010-1234-5678)
-            if (f === 'phone') {
-              const digits = v.toString().replace(/[^0-9]/g, '');
-              if (digits.length === 11) {
-                val = digits.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
-              } else if (digits.length === 10) {
-                val = digits.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
-              } else {
-                val = digits;
-              }
+          // Phone formatting (01012345678 -> 010-1234-5678)
+          if (f === 'phone') {
+            const digits = v.toString().replace(/[^0-9]/g, '');
+            if (digits.length === 11) {
+              val = digits.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+            } else if (digits.length === 10) {
+              val = digits.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+            } else {
+              val = digits;
             }
+          }
 
-            // Date formatting (19940624 -> 1994-06-24)
-            const dateFields = ['birth_date', 'iap_to', 'rediagnosis_date', 'hire_date', 'initial_counsel_date', 
-                                'start_date', 'end_date', 'apply_date', 'expected_payment_date', 
-                                'continue_serv_1_date', 'continue_serv_6_date', 'continue_serv_12_date', 'continue_serv_18_date'];
-            if (dateFields.includes(f)) {
-              const digits = v.toString().replace(/[^0-9]/g, '');
-              if (digits.length === 8) {
-                val = digits.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
-              } else {
-                val = v;
-              }
+          // Date formatting (19940624 -> 1994-06-24)
+          const dateFields = ['iap_date', 'initial_counsel_date', 'rediagnosis_date', 'employment_date'];
+          if (dateFields.includes(f)) {
+            const digits = v.toString().replace(/[^0-9]/g, '');
+            if (digits.length === 8) {
+              val = digits.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+            } else {
+              val = v;
             }
-            
-            // Field-specific boolean/code conversions
-            if (f === 'has_car' || f === 'is_working_parttime' || f === 'can_drive') {
-               val = v === 'Y' || v === true;
-            } else if (f === 'future_card_stat') {
-               val = v === '1' ? 1 : 0;
-            }
+          }
         }
 
         return { dbKey, val };
@@ -735,35 +682,12 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      {/* Progress Tracker */}
-      <div className="counsel_progress_bar mb-8 px-2">
-        <div className="flex justify-between items-center relative gap-4">
-          {['초기상담', '심층상담', '취업지원', '취업완료', '사후처리'].map((stage, idx, arr) => {
-            const currentIdx = arr.indexOf(client.participation_stage || '');
-            const isActive = idx <= currentIdx;
-            const isCurrent = stage === client.participation_stage;
-            
-            return (
-              <div key={stage} className="flex flex-col items-center gap-2 relative z-10 flex-1">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all duration-500 text-xs
-                    ${isActive ? 'bg-primary border-primary text-white scale-110' : 'bg-white border-muted text-muted-foreground'}
-                    ${isCurrent ? 'ring-4 ring-primary/20' : ''}`}
-                >
-                  {isActive && idx < currentIdx ? <Check size={12} strokeWidth={3} /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
-                </div>
-                <span className={`text-[11px] font-bold transition-all ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
-                  {stage}
-                </span>
-                
-                {/* Active Progress Line */}
-                {idx < arr.length - 1 && idx < currentIdx && (
-                  <div className="absolute left-1/2 w-full h-0.5 bg-primary top-3.5 -translate-y-1/2 -z-10 translate-x-3.5"></div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/*
+        NOTE(2026-08-26): 실데이터의 참여단계 값이 5단계 고정 파이프라인을 훨씬 벗어나
+        (구직활동/중단/만종/사후관리취업 등 30여 종) 있어, 5단계 진행바는 대부분의 레코드에서
+        전부 비활성으로 보이는 오해의 소지가 있었다. 상단 배지(위 헤더)가 실제 값을 그대로
+        보여주므로 진행바는 제거함.
+      */}
 
       <EmploymentSuccessCaseCard clientId={client.id} />
 
@@ -928,24 +852,18 @@ export default function ClientDetail() {
                 <DashboardField 
                     label="참여단계" 
                     field="participation_stage" 
-                    value={client.participation_stage} 
-                    onEdit={startEdit} 
-                    editingField={editingField} 
-                    editValue={editValue} 
-                    setEditValue={setEditValue} 
-                    onConfirm={handleUpdateField} 
-                    onCancel={cancelEdit} 
-                    isBadge 
-                    stageColors={stageColors} 
-                    type="select"
-                    options={[
-                        { value: '초기상담', label: '초기상담' },
-                        { value: '심층상담', label: '심층상담' },
-                        { value: '취업지원', label: '취업지원' },
-                        { value: '취업완료', label: '취업완료' },
-                        { value: '사후처리', label: '사후처리' }
-                    ]}
+                    value={client.participation_stage}
+                    onEdit={startEdit}
+                    editingField={editingField}
+                    editValue={editValue}
+                    setEditValue={setEditValue}
+                    onConfirm={handleUpdateField}
+                    onCancel={cancelEdit}
+                    isBadge
+                    stageColors={stageColors}
                 />
+                {/* NOTE(2026-08-26): 실데이터의 참여단계가 고정 5개보다 훨씬 다양해서(30여 종)
+                    드롭다운 대신 자유 텍스트로 입력받는다. */}
               </div>
 
               {/* Column 3: Key Dates */}

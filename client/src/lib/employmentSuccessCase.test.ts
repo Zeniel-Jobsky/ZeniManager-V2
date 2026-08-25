@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildClientEmploymentUpdateRecord,
   maskKoreanName,
   searchEmploymentSuccessCases,
   syncEmploymentSuccessCase,
@@ -62,40 +61,6 @@ describe('employmentSuccessCase helpers', () => {
     expect(toAgeDecade(0)).toBe('연령 미상');
   });
 
-  it('normalizes employment snapshot updates into client table columns', () => {
-    expect(buildClientEmploymentUpdateRecord({
-      participationStage: '취업완료',
-      desiredJob1: '백엔드 개발자',
-      desiredJob2: '웹 개발자',
-      desiredJob3: '',
-      employmentType: '정규직',
-      employmentCompany: '  제니소프트  ',
-      employmentJobType: '서버 개발',
-      employmentSalary: '3200만원',
-      employmentDate: '2026-03-15T09:12:00+09:00',
-      hireDate: '2026/03/16',
-    })).toEqual({
-      participation_stage: '취업완료',
-      desired_job_1: '백엔드 개발자',
-      desired_job_2: '웹 개발자',
-      desired_job_3: null,
-      hire_type: '정규직',
-      hire_place: '제니소프트',
-      hire_job_type: '서버 개발',
-      hire_payment: '3200만원',
-      job_place_start: '2026-03-15',
-      hire_date: '2026-03-16',
-    });
-  });
-
-  it('keeps undefined fields out of snapshot update records', () => {
-    expect(buildClientEmploymentUpdateRecord({
-      employmentCompany: '오픈AI',
-    })).toEqual({
-      hire_place: '오픈AI',
-    });
-  });
-
   it('calls the employment search edge function with the expected payload', async () => {
     localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, 'https://example.supabase.co');
     localStorage.setItem(STORAGE_KEYS.SUPABASE_ANON_KEY, 'anon-key-that-is-long-enough');
@@ -108,12 +73,12 @@ describe('employmentSuccessCase helpers', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await searchEmploymentSuccessCases(7, 4);
+    await searchEmploymentSuccessCases('7c3b1e2a-0000-4000-8000-000000000007', 4);
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toMatchObject({
-      clientId: 7,
+      clientId: '7c3b1e2a-0000-4000-8000-000000000007',
       limit: 4,
       openAIKey: 'sk-test-key',
     });
@@ -127,16 +92,16 @@ describe('employmentSuccessCase helpers', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => JSON.stringify({ status: 'activated', sourceClientId: 7 }),
+      text: async () => JSON.stringify({ status: 'activated', sourceClientId: '7c3b1e2a-0000-4000-8000-000000000007' }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await syncEmploymentSuccessCase(7);
+    await syncEmploymentSuccessCase('7c3b1e2a-0000-4000-8000-000000000007');
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toMatchObject({
-      clientId: 7,
+      clientId: '7c3b1e2a-0000-4000-8000-000000000007',
       openAIKey: 'sk-test-key',
     });
   });

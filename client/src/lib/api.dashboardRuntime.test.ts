@@ -196,11 +196,13 @@ describe('dashboard runtime APIs', () => {
       '2026-03-10': 1,
       '2026-03-11': 1,
     });
+    // 소유권 필터는 앱 코드가 아니라 RLS(clients_select)가 담당하므로,
+    // 여기서는 세션에서 발견된 client_id들로 소유권 검증 조회가 나가는지만 확인한다.
     expect(queryLog).toContainEqual({
       table: 'clients',
       operation: 'select',
-      method: 'eq',
-      args: ['counselor_id', 'auth-1'],
+      method: 'in',
+      args: ['id', ['10', '20']],
     });
   });
 
@@ -356,11 +358,13 @@ describe('dashboard runtime APIs', () => {
       salary: '3200',
       employment_date: '2026-03-15',
     });
+    // 소유권 필터는 앱 코드가 아니라 RLS(clients_select)가 담당하므로,
+    // 여기서는 검색 조건(or)이 실제로 실렸는지만 확인한다.
     expect(queryLog).toContainEqual({
       table: 'clients',
       operation: 'select',
-      method: 'eq',
-      args: ['counselor_id', 'auth-1'],
+      method: 'or',
+      args: ['name.ilike.%홍길동%,phone.ilike.%홍길동%,desired_job.ilike.%홍길동%'],
     });
   });
 });

@@ -14,7 +14,7 @@ import {
 } from '../_shared/employment-success.ts';
 
 type RequestBody = {
-  clientId?: number;
+  clientId?: string;
   limit?: number;
   openAIKey?: string;
 };
@@ -40,22 +40,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// NOTE(2026-08-26): public.clients 스키마 기준 (id는 uuid).
 const CLIENT_SELECT_FIELDS = [
-  'client_id',
-  'client_name',
+  'id',
+  'name',
   'age',
   'education_level',
-  'school_name',
+  'school',
   'major',
-  'desired_job_1',
-  'desired_job_2',
-  'desired_job_3',
+  'desired_job',
   'participation_stage',
-  'hire_place',
-  'hire_type',
-  'hire_job_type',
-  'hire_date',
-  'job_place_start',
+  'employer',
+  'employment_type',
+  'job_title',
+  'employment_date',
 ].join(', ');
 
 Deno.serve(async request => {
@@ -66,13 +64,12 @@ Deno.serve(async request => {
   try {
     const admin = createAdminClient();
     const body = await readBody(request);
-    const clientId = Number(body.clientId);
 
-    if (!Number.isFinite(clientId)) {
+    if (!body.clientId) {
       return json({ error: 'clientId가 필요합니다.' }, 400);
     }
 
-    const sourceClient = await fetchClientById(admin, clientId);
+    const sourceClient = await fetchClientById(admin, body.clientId);
     if (!sourceClient) {
       return json({ error: '상담자 데이터를 찾을 수 없습니다.' }, 404);
     }
@@ -85,7 +82,7 @@ Deno.serve(async request => {
     const { data, error } = await admin.rpc('match_employment_success_case', {
       query_embedding_text: vectorLiteral(queryEmbedding),
       match_count: Math.max(limit * 3, 10),
-      exclude_client_id: clientId,
+      exclude_client_id: body.clientId,
     });
 
     if (error) throw error;
@@ -140,12 +137,12 @@ async function readBody(request: Request): Promise<RequestBody> {
 
 async function fetchClientById(
   admin: ReturnType<typeof createClient>,
-  clientId: number,
+  clientId: string,
 ): Promise<EmploymentSourceRow | null> {
   const { data, error } = await admin
-    .from('client')
+    .from('clients')
     .select(CLIENT_SELECT_FIELDS)
-    .eq('client_id', clientId)
+    .eq('id', clientId)
     .maybeSingle();
 
   if (error) throw error;
@@ -181,7 +178,7 @@ function rerankCandidate(source: EmploymentSourceRow, candidate: SearchCandidate
 
   return {
     id: String(candidate.id),
-    sourceClientId: String(candidate.source_client_id),
+    sourceClientId: candidate.source_client_id,
     maskedClientName: candidate.masked_client_name,
     ageDecade: candidate.age_decade,
     educationLevel: candidate.education_level,

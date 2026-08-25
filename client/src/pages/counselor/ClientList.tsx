@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ROLE_COUNSELOR } from '@shared/const';
+import { ROLE_COUNSELOR, isEmploymentCompletedStage } from '@shared/const';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageGuard } from '@/hooks/usePageGuard';
 import {
@@ -15,7 +15,7 @@ import {
   AlertTriangle, RefreshCw, ArrowUp, ArrowDown, GripVertical
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchClients, fetchSessions, createSession, deleteSession, fetchSurveys, createSurvey, updateSurvey, updateClient } from '@/lib/api';
+import { fetchClients, fetchSessions, createSession, deleteSession, fetchSurveys, createSurvey, updateSurvey, updateClient, deleteClient } from '@/lib/api';
 import { syncEmploymentSuccessCase } from '@/lib/employmentSuccessCase';
 import type { ClientRow, SessionRow, SurveyRow } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -38,7 +38,7 @@ function formatFollowUpStat(client: ClientRow): string {
 }
 
 function isEmploymentCompleted(client: ClientRow): boolean {
-  return client.participation_stage === '취업완료';
+  return isEmploymentCompletedStage(client.participation_stage);
 }
 
 // ─── Survey Questions from 구직준비도점검설문지 ─────────────────────────────────
@@ -692,27 +692,70 @@ export default function ClientList() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const itemsPerPage = 20;
+  const SWIPE_DELETE_WIDTH = 88;
+  const [openSwipeClientId, setOpenSwipeClientId] = useState<string | null>(null);
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
+
+  const handleDeleteClient = async (client: ClientRow) => {
+    if (!confirm(`'${client.name}' 고객을 삭제하시겠습니까? 되돌릴 수 없습니다.`)) return;
+    setDeletingClientId(client.id);
+    try {
+      await deleteClient(client.id);
+      setClients(prev => prev.filter(c => c.id !== client.id));
+      setOpenSwipeClientId(null);
+      toast.success('삭제되었습니다.');
+    } catch (e: any) {
+      toast.error('삭제 실패: ' + e.message);
+    } finally {
+      setDeletingClientId(null);
+    }
+  };
 
   // --- Column Resize & Reorder States ---
   const DEFAULT_COLS = [
     { key: 'name', label: '이름', width: 120 },
     { key: 'phone', label: '연락처', width: 140 },
-    { key: 'iap_to', label: 'IAP 수립일', width: 130 },
+    { key: 'iap_date', label: 'IAP 수립일', width: 130 },
     { key: 'participation_stage', label: '취업단계', width: 120 },
-    { key: 'participate_type', label: '사업유형', width: 120 },
+    { key: 'business_type', label: '사업유형', width: 120 },
     { key: 'retest_stat', label: '점수', width: 80 },
     { key: 'continue_serv_1_stat', label: '사후관리', width: 100 },
     { key: 'memo', label: '메모', width: 250 },
   ];
 
+  // NOTE(2026-08-26): 컬럼 키(iap_to→iap_date 등)가 스키마 마이그레이션으로 바뀌면서,
+  // 예전에 저장된 localStorage 컬럼 설정에 지금은 존재하지 않는 키가 남아있을 수 있다.
+  // 그런 키는 걸러내고, DEFAULT_COLS에 새로 생긴 키는 뒤에 채워 넣어 자동으로 복구한다.
+  const DEFAULT_COL_KEYS = DEFAULT_COLS.map(c => c.key);
+
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     const saved = localStorage.getItem('zeni_client_col_order');
-    return saved ? JSON.parse(saved) : DEFAULT_COLS.map(c => c.key);
+    if (saved) {
+      try {
+        const parsed: string[] = JSON.parse(saved);
+        const validKeys = new Set(DEFAULT_COL_KEYS);
+        const kept = parsed.filter(key => validKeys.has(key));
+        const missing = DEFAULT_COL_KEYS.filter(key => !kept.includes(key));
+        return [...kept, ...missing];
+      } catch {
+        // 저장된 값이 손상됐으면 기본값으로 폴백
+      }
+    }
+    return DEFAULT_COL_KEYS;
   });
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const defaults = DEFAULT_COLS.reduce((acc, c) => ({ ...acc, [c.key]: c.width }), {} as Record<string, number>);
     const saved = localStorage.getItem('zeni_client_col_widths');
-    return saved ? JSON.parse(saved) : DEFAULT_COLS.reduce((acc, c) => ({ ...acc, [c.key]: c.width }), {});
+    if (saved) {
+      try {
+        const parsed: Record<string, number> = JSON.parse(saved);
+        return { ...defaults, ...parsed };
+      } catch {
+        // 저장된 값이 손상됐으면 기본값으로 폴백
+      }
+    }
+    return defaults;
   });
 
   const [resizing, setResizing] = useState<{ key: string; startWidth: number; startX: number } | null>(null);
@@ -1037,9 +1080,36 @@ export default function ClientList() {
                   paginatedClients.map((client, index) => (
                     <tr
                       key={client.id}
-                      className="flex border-b border-border last:border-0 hover:bg-muted/5 transition-colors"
+                      className="relative flex border-b border-border last:border-0 overflow-hidden"
                     >
-                      <td className="flex-shrink-0 px-4 py-3 text-muted-foreground flex items-center" style={{ width: 60 }}>
+                      {/* 왼쪽으로 드래그하면 뒤에 깔린 삭제 버튼이 드러남 */}
+                      <div className="absolute inset-y-0 right-0 z-0 flex items-stretch" style={{ width: SWIPE_DELETE_WIDTH }}>
+                        <button
+                          onClick={() => handleDeleteClient(client)}
+                          disabled={deletingClientId === client.id}
+                          className="flex-1 bg-destructive text-destructive-foreground text-xs font-bold flex flex-col items-center justify-center gap-1 hover:brightness-110 transition-[filter] disabled:opacity-60"
+                        >
+                          {deletingClientId === client.id
+                            ? <Loader2 size={16} className="animate-spin" />
+                            : <Trash2 size={16} />
+                          }
+                          삭제
+                        </button>
+                      </div>
+
+                      <motion.div
+                        className="relative z-10 flex bg-card w-full touch-pan-y"
+                        drag="x"
+                        dragConstraints={{ left: -SWIPE_DELETE_WIDTH, right: 0 }}
+                        dragElastic={0}
+                        dragMomentum={false}
+                        animate={{ x: openSwipeClientId === client.id ? -SWIPE_DELETE_WIDTH : 0 }}
+                        transition={{ type: 'spring', damping: 32, stiffness: 420 }}
+                        onDragEnd={(_, info) => {
+                          setOpenSwipeClientId(info.offset.x < -SWIPE_DELETE_WIDTH / 2 ? client.id : null);
+                        }}
+                      >
+                      <td className="flex-shrink-0 px-4 py-3 text-muted-foreground flex items-center bg-card" style={{ width: 60 }}>
                         {(currentPage - 1) * itemsPerPage + index + 1}
                       </td>
                       <div className="flex flex-1 overflow-hidden">
@@ -1090,17 +1160,25 @@ export default function ClientList() {
                                   maxWidth: `var(--col-width-${key})`
                                 }}
                               >
-                                <select
-                                  value={client.participation_stage || ''}
-                                  onChange={e => handleStageUpdate(client.id, e.target.value)}
-                                  className={`text-xs px-2 py-1 rounded-sm border-none focus:ring-0 cursor-pointer appearance-none ${stageColors[client.participation_stage || ''] || 'badge-active'}`}
-                                  style={{ width: 'fit-content' }}
-                                >
-                                  <option value="" disabled>단계 선택</option>
-                                  {Object.keys(stageColors).map(s => (
-                                    <option key={s} value={s} className="bg-background text-foreground">{s}</option>
-                                  ))}
-                                </select>
+                                {/* NOTE(2026-08-26): 실데이터의 참여단계가 고정 값 몇 개보다 훨씬
+                                    다양해서(구직활동/중단/만종 등 30여 종) 드롭다운 대신 자유
+                                    텍스트로 입력받는다. blur/Enter 시점에 저장. */}
+                                <input
+                                  type="text"
+                                  key={client.id + ':' + (client.participation_stage ?? '')}
+                                  defaultValue={client.participation_stage || ''}
+                                  onBlur={e => {
+                                    const next = e.target.value.trim();
+                                    if (next !== (client.participation_stage || '')) {
+                                      handleStageUpdate(client.id, next);
+                                    }
+                                  }}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                  }}
+                                  className={`text-xs px-2 py-1 rounded-sm border border-transparent hover:border-border focus:border-input focus:bg-background outline-none ${stageColors[client.participation_stage || ''] || 'badge-active'}`}
+                                  style={{ width: '100%' }}
+                                />
                               </motion.td>
                             );
                           }
@@ -1181,7 +1259,7 @@ export default function ClientList() {
                           );
                         })}
                       </div>
-                      <td className="flex-shrink-0 px-4 py-3 text-right flex items-center justify-end" style={{ width: 80 }}>
+                      <td className="flex-shrink-0 px-4 py-3 text-right flex items-center justify-end bg-card" style={{ width: 80 }}>
                         <button
                           onClick={() => navigate(`/clients/detail/${client.id}`)}
                           className="p-1.5 rounded-sm hover:bg-muted transition-colors"
@@ -1189,6 +1267,7 @@ export default function ClientList() {
                           <Edit3 size={14} />
                         </button>
                       </td>
+                      </motion.div>
                     </tr>
                   ))
                 )}
