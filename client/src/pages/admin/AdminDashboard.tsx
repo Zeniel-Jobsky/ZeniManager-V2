@@ -77,7 +77,7 @@ export default function AdminDashboard() {
   // 1. 드롭다운 옵션 추출 (DB 스키마 business_type_code 반영)
   const branchOptions = useMemo(() => ['all', ...Array.from(new Set(counselors.map(c => c.department).filter(Boolean)))], [counselors]);
   const businessOptions = useMemo(() => {
-    return ['all', ...Array.from(new Set(clients.map(c => String(c.business_type_code || c.business_type || '')).filter(b => b && b !== '미지정')))];
+    return ['all', ...Array.from(new Set(clients.map(c => String(c.business_type || '')).filter(b => b && b !== '미지정')))];
   }, [clients]);
 
   // 2. 필터링된 데이터 계산
@@ -85,7 +85,7 @@ export default function AdminDashboard() {
     return clients.filter(c => {
       const counselor = counselors.find(con => con.user_id === c.counselor_id);
       const clientBranch = counselor?.department || c.branch || '미지정';
-      const clientBusiness = String(c.business_type_code || c.business_type || '미지정');
+      const clientBusiness = String(c.business_type || '미지정');
       
       const matchBranch = selectedBranch === 'all' || clientBranch === selectedBranch;
       const matchBusiness = selectedBusiness === 'all' || clientBusiness === selectedBusiness;
@@ -95,7 +95,7 @@ export default function AdminDashboard() {
 
   // 3. KPI 수치 계산 (hire_type 스키마 반영)
   const totalCount = filteredClients.length;
-  const completedCount = filteredClients.filter(c => !!c.hire_type || c.participation_stage === '취업완료').length;
+  const completedCount = filteredClients.filter(c => !!c.employment_type || c.participation_stage === '취업완료').length;
   const inProgress = totalCount - completedCount;
   const avgRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
@@ -135,7 +135,7 @@ export default function AdminDashboard() {
 
       filteredClients.forEach(c => {
         // [분모 계산] 취업지원종료일이 해당 월 시작일보다 앞(과거)이면 분모에서 제외
-        const supportEndStr = c.job_place_support_end || c.support_end_date;
+        const supportEndStr = c.support_end_date;
         if (supportEndStr) {
           const supportEndDate = new Date(supportEndStr);
           if (!isNaN(supportEndDate.getTime()) && supportEndDate < startOfMonth) {
@@ -144,7 +144,7 @@ export default function AdminDashboard() {
         }
 
         // [분자 계산] 취업일자가 해당 월 내에 속하면 분자로 카운트
-        const hireDateStr = c.hire_date || (c as any).employment_date; // fallback 유지
+        const hireDateStr = c.employment_date;
         if (hireDateStr) {
           const hireDate = new Date(hireDateStr);
           if (!isNaN(hireDate.getTime()) && hireDate >= startOfMonth && hireDate <= endOfMonth) {
@@ -165,7 +165,7 @@ export default function AdminDashboard() {
     const map: Record<string, number> = {};
     let total = 0;
     filteredClients.forEach(c => {
-      const bt = String(c.business_type_code || c.business_type || '미지정');
+      const bt = String(c.business_type || '미지정');
       map[bt] = (map[bt] || 0) + 1;
       total++;
     });
@@ -192,7 +192,7 @@ export default function AdminDashboard() {
         const b = counselor?.department || c.branch || '미지정';
         if (!map[b]) map[b] = { total: 0, done: 0, counselorCount: 0 };
         map[b].total++;
-        if (!!c.hire_type || c.participation_stage === '취업완료') map[b].done++;
+        if (!!c.employment_type || c.participation_stage === '취업완료') map[b].done++;
       });
 
       return Object.entries(map).map(([name, v]) => ({
@@ -203,7 +203,7 @@ export default function AdminDashboard() {
       const branchCounselors = counselors.filter(c => c.department === selectedBranch);
       return branchCounselors.map(con => {
         const conClients = filteredClients.filter(c => c.counselor_id === con.user_id);
-        const done = conClients.filter(c => !!c.hire_type || c.participation_stage === '취업완료').length;
+        const done = conClients.filter(c => !!c.employment_type || c.participation_stage === '취업완료').length;
         return {
           name: con.user_name, total: conClients.length, done: done,
           rate: conClients.length > 0 ? Math.round((done / conClients.length) * 100) : 0

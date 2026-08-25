@@ -93,14 +93,11 @@ export function buildStructuredSummaryJson(
   client: ClientRow,
   profile: MergedDocumentProfile
 ): StructuredSummaryJson {
-  const extractedMemoInsights = extractMemoInsights(client.memo, client.MBTI);
+  // NOTE(2026-08-26): public.clients 스키마에는 MBTI/desired_area_1-3/desired_payment 컬럼이 없어
+  // 메모 텍스트 추출 결과(extractedMemoInsights)만 사용한다.
+  const extractedMemoInsights = extractMemoInsights(client.counsel_notes);
   const memoInsights = {
     ...extractedMemoInsights,
-    preferredLocation:
-      extractedMemoInsights.preferredLocation ??
-      firstNonEmpty([client.desired_area_1, client.desired_area_2, client.desired_area_3]),
-    preferredSalary:
-      extractedMemoInsights.preferredSalary ?? formatDesiredPayment(client.desired_payment),
   };
   const cleanedCertifications = cleanData(profile.certifications);
   const cleanedExtraSpecs = cleanData(profile.extraSpecs);

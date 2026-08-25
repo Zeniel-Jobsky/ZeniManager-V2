@@ -4,7 +4,6 @@ import {
   getOpenAIKey,
   getSupabaseUrl,
   isSupabaseConfigured,
-  getOpenAIKey,
 } from './supabase';
 
 const CLIENT_EMPLOYMENT_SELECT_FIELDS = `

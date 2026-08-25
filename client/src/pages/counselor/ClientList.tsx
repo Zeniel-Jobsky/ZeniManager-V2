@@ -25,23 +25,16 @@ const PRIMARY = '#009C64';
 type FilterType = 'all' | 'no-score' | 'follow-up' | 'employed';
 type ClientModalTab = 'manage' | 'history' | 'input' | 'survey';
 
-function parseFollowUpStat(value: ClientRow['continue_serv_1_stat']): number | null {
-  if (value == null || value === '') return null;
-  const normalized = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(normalized) ? normalized : null;
-}
-
 function hasScore(client: ClientRow): boolean {
-  return client.retest_stat != null;
+  return client.score != null;
 }
 
 function needsFollowUp(client: ClientRow): boolean {
-  return (parseFollowUpStat(client.continue_serv_1_stat) ?? 0) > 0;
+  return client.retention_1m_yn === 'N';
 }
 
 function formatFollowUpStat(client: ClientRow): string {
-  const followUpStat = parseFollowUpStat(client.continue_serv_1_stat);
-  return followUpStat != null && followUpStat > 0 ? String(followUpStat) : '-';
+  return client.retention_1m_yn ?? '-';
 }
 
 function isEmploymentCompleted(client: ClientRow): boolean {
@@ -519,11 +512,11 @@ function ClientDetailModal({
                           <span className="text-sm font-bold" style={{ color: PRIMARY }}>{client.competency_grade}등급</span>
                         </div>
                       )}
-                      {/* Live list/detail score is sourced from retest_stat to match dashboard rules. */}
-                      {client.retest_stat != null && (
+                      {/* Live list/detail score is sourced from score to match dashboard rules. */}
+                      {client.score != null && (
                         <div className="flex items-center justify-between">
                           <span className="text-sm">점수</span>
-                          <span className="text-sm font-bold" style={{ color: PRIMARY }}>{client.retest_stat}점</span>
+                          <span className="text-sm font-bold" style={{ color: PRIMARY }}>{client.score}점</span>
                         </div>
                       )}
                       <div className="flex items-center justify-between">
@@ -1126,8 +1119,8 @@ export default function ClientList() {
                                 }}
                               >
                                 <div className="w-full">
-                                  {client.retest_stat != null
-                                    ? <span className="font-semibold" style={{ color: PRIMARY }}>{client.retest_stat}</span>
+                                  {client.score != null
+                                    ? <span className="font-semibold" style={{ color: PRIMARY }}>{client.score}</span>
                                     : <span className="text-muted-foreground">-</span>
                                   }
                                 </div>
@@ -1166,7 +1159,7 @@ export default function ClientList() {
                                   maxWidth: `var(--col-width-${key})`
                                 }}
                               >
-                                <div className="truncate w-full">{client.memo || '-'}</div>
+                                <div className="truncate w-full">{client.counsel_notes || '-'}</div>
                               </motion.td>
                             );
                           }

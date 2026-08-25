@@ -38,6 +38,39 @@ function runQuery<T>(
   });
 }
 
+/**
+ * PostgREST는 .range()를 지정하지 않으면 프로젝트의 기본 max-rows(보통 1000)까지만 반환한다.
+ * 데이터 개수와 무관하게 전체를 가져오기 위해 페이지 단위로 끝까지 반복 조회한다.
+ */
+const FETCH_ALL_PAGE_SIZE = 1000;
+
+async function fetchAllPages<T>(
+  operationLabel: string,
+  buildQuery: (fromIndex: number, toIndex: number) => PromiseLike<{
+    data: T[] | null;
+    error: unknown;
+    status?: number | null;
+    count?: number | null;
+  }>,
+  pageSize = FETCH_ALL_PAGE_SIZE,
+): Promise<T[]> {
+  const allRows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await runQuery<T[]>(operationLabel, buildQuery(from, from + pageSize - 1));
+    if (error) throw error;
+
+    const page = data ?? [];
+    allRows.push(...page);
+
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return allRows;
+}
+
 function isMissingSchemaError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -56,87 +89,82 @@ function isMissingSchemaError(error: unknown): boolean {
 
 const SESSION_META_MARKER = '\n\n[__CALENDAR_FLOW_META__]\n';
 
+// public.clients 테이블 실제 컬럼 (2026-08-26 확정, information_schema 기준)
 type LiveClientRecord = {
-  client_id: number;
-  client_name: string;
-  counselor_id: string | null;
+  id: string;
+  seq_no: number | null;
+  year: number | null;
+  assignment_type: string | null;
+  name: string;
+  resident_id_masked: string | null;
+  phone: string | null;
+  last_counsel_date: string | null;
   age: number | null;
-  gender_code: string | null;
-  phone_encrypted: string | null;
-  education_level: string | null;
-  school_name: string | null;
-  major: string | null;
-  business_type_code: number | null;
+  gender: '남' | '여' | null;
+  business_type: string | null;
   participation_type: string | null;
   participation_stage: string | null;
-  assignment_type: string | null;
-  capa: string | null;
-  desired_job_1: string | null;
-  desired_job_2: string | null;
-  desired_job_3: string | null;
-  desired_area_1: string | null;
-  desired_area_2: string | null;
-  desired_area_3: string | null;
-  desired_payment: number | null;
-  hire_type: string | null;
-  job_place_start: string | null;
-  job_place_end: string | null;
-  iap_to: string | null;
-  retest_stat: number | null;
-  retest_date: string | null;
-  continue_serv_1_date: string | null;
-  continue_serv_1_stat: number | null;
-  continue_serv_6_date: string | null;
-  continue_serv_6_stat: number | null;
-  continue_serv_12_date: string | null;
-  continue_serv_12_stat: number | null;
-  continue_serv_18_date: string | null;
-  continue_serv_18_stat: number | null;
-  memo: string | null;
-  hire_place: string | null;
-  hire_job_type: string | null;
-  hire_date: string | null;
-  hire_payment: number | null;
-  address_1: string | null;
-  address_2: string | null;
-  has_car: boolean | string | null;
-  is_working_parttime: boolean | string | null;
-  can_drive: boolean | string | null;
-  future_card_stat: number | null;
-  MBTI: string | null;
-  email: string | null;
-  birth_date: string | null;
-  client_certificates?: { certificate_name: string; acquisition_date: string | null }[] | null;
-  business_code?: { participate_type: string | null }[] | null;
-  job_place_support_end: string | null;
+  competency_grade: string | null;
+  recognition_date: string | null;
+  desired_job: string | null;
+  counsel_notes: string | null;
+  address: string | null;
+  school: string | null;
+  major: string | null;
+  education_level: string | null;
+  initial_counsel_date: string | null;
+  iap_date: string | null;
+  iap_duration: string | null;
+  allowance_apply_date: string | null;
+  rediagnosis_date: string | null;
+  rediagnosis_yn: string | null;
+  work_exp_type: string | null;
+  work_exp_intent: string | null;
+  work_exp_company: string | null;
+  work_exp_period: string | null;
+  work_exp_completed: string | null;
+  training_name: string | null;
+  training_start: string | null;
+  training_end: string | null;
+  training_allowance: string | null;
+  intensive_start: string | null;
+  intensive_end: string | null;
+  support_end_date: string | null;
+  employment_type: string | null;
+  employment_date: string | null;
+  employer: string | null;
+  job_title: string | null;
+  salary: string | null;
+  employment_duration: string | null;
+  resignation_date: string | null;
+  retention_1m_date: string | null;
+  retention_1m_yn: string | null;
+  retention_6m_date: string | null;
+  retention_6m_yn: string | null;
+  retention_12m_date: string | null;
+  retention_12m_yn: string | null;
+  retention_18m_date: string | null;
+  retention_18m_yn: string | null;
+  counselor_name: string | null;
+  counselor_id: string | null;
+  branch: string | null;
+  follow_up: boolean | null;
+  score: number | null;
   created_at: string | null;
-  update_at: string | null;
+  updated_at: string | null;
 };
 
+// public.sessions 테이블 실제 컬럼 (2026-08-26 확정)
 type LiveCounselHistoryRecord = {
-  counsel_id: number;
-  client_id: number;
-  user_id: string | null;
-  counsel_date: string;
-  start_time: string | null;
-  end_time: string | null;
-  session_number: number | null;
-  counselor_opinion: string | null;
-  counsel_type: string | null;
-  create_at: string | null;
-  document_link?: string | null;
-  economic_situation?: number | null;
-  social_situation_family?: number | null;
-  social_situation_society?: number | null;
-  self_esteem?: number | null;
-  self_efficacy?: number | null;
-  holland_code?: string | null;
-  career_fluidity?: number | null;
-  info_gathering?: number | null;
-  personality_test_result?: string | null;
-  life_history_result?: string | null;
-  profiling_grade?: string | null;
-  memo?: string | null;
+  id: string;
+  client_id: string;
+  date: string;
+  type: string | null;
+  content: string | null;
+  counselor_name: string | null;
+  counselor_id: string | null;
+  next_action: string | null;
+  created_at: string | null;
 };
 
 function encodeSessionPayload(type: string, content: string, nextAction?: string | null): string {
@@ -174,94 +202,97 @@ function decodeSessionPayload(
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
+// public.clients 테이블 컬럼 (2026-08-26 확정 — 실데이터 보유 테이블, 코드를 여기에 맞춤)
 const CLIENT_SELECT_FIELDS = `
-  client_id,
-  client_name,
-  counselor_id,
+  id,
+  seq_no,
+  year,
+  assignment_type,
+  name,
+  resident_id_masked,
+  phone,
+  last_counsel_date,
   age,
-  gender_code,
-  phone_encrypted,
-  education_level,
-  school_name,
-  major,
-  business_type_code,
+  gender,
+  business_type,
   participation_type,
   participation_stage,
-  desired_job_1,
-  desired_job_2,
-  desired_job_3,
-  capa,
-  desired_area_1,
-  desired_area_2,
-  desired_area_3,
-  desired_payment,
-  hire_type,
-  job_place_start,
-  job_place_end,
-  iap_to,
-  retest_stat,
-  retest_date,
-  continue_serv_1_date,
-  continue_serv_1_stat,
-  continue_serv_6_date,
-  continue_serv_6_stat,
-  continue_serv_12_date,
-  continue_serv_12_stat,
-  continue_serv_18_date,
-  continue_serv_18_stat,
-  memo,
-  hire_place,
-  hire_job_type,
-  hire_date,
-  hire_payment,
-  address_1,
-  address_2,
-  has_car,
-  is_working_parttime,
-  can_drive,
-  future_card_stat,
-  MBTI,
-  email,
-  birth_date,
+  competency_grade,
+  recognition_date,
+  desired_job,
+  counsel_notes,
+  address,
+  school,
+  major,
+  education_level,
+  initial_counsel_date,
+  iap_date,
+  iap_duration,
+  allowance_apply_date,
+  rediagnosis_date,
+  rediagnosis_yn,
+  work_exp_type,
+  work_exp_intent,
+  work_exp_company,
+  work_exp_period,
+  work_exp_completed,
+  training_name,
+  training_start,
+  training_end,
+  training_allowance,
+  intensive_start,
+  intensive_end,
+  support_end_date,
+  employment_type,
+  employment_date,
+  employer,
+  job_title,
+  salary,
+  employment_duration,
+  resignation_date,
+  retention_1m_date,
+  retention_1m_yn,
+  retention_6m_date,
+  retention_6m_yn,
+  retention_12m_date,
+  retention_12m_yn,
+  retention_18m_date,
+  retention_18m_yn,
+  counselor_name,
+  counselor_id,
+  branch,
+  follow_up,
+  score,
   created_at,
-  update_at,
-  business_code (
-    participate_type
-  ),
-  allowance_log (
-    round,
-    apply_date
-  )
+  updated_at
 `;
 
 export async function fetchClients(counselorId?: string): Promise<ClientRow[]> {
   if (!isSupabaseConfigured()) return [];
 
-  let q = sb()
-    .from('client')
-    .select(CLIENT_SELECT_FIELDS)
-    .order('iap_to', { ascending: true, nullsFirst: false });
+  const rows = await fetchAllPages<LiveClientRecord>('고객 목록 조회', (from, to) => {
+    let q = sb()
+      .from('clients')
+      .select(CLIENT_SELECT_FIELDS)
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
-  if (counselorId) q = q.eq('counselor_id', counselorId);
+    if (counselorId) q = q.eq('counselor_id', counselorId);
+    return q;
+  });
 
-  const { data, error } = await runQuery<LiveClientRecord[]>('고객 목록 조회', q);
-  if (error) throw error;
-  if (!data) return [];
-  return ((data as any) as unknown as LiveClientRecord[]).map(row => liveClientToRow(row));
+  return rows.map(row => liveClientToRow(row));
 }
 
 export async function fetchClientById(id: string): Promise<ClientRow | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) return null;
-
   const { data, error } = await runQuery<LiveClientRecord>(
     '고객 상세 조회',
     sb()
-      .from('client')
+      .from('clients')
       .select(CLIENT_SELECT_FIELDS)
-      .eq('client_id', numericId)
+      .eq('id', id)
       .single(),
   );
 
@@ -270,59 +301,34 @@ export async function fetchClientById(id: string): Promise<ClientRow | null> {
     throw error;
   }
 
-  const clientRow = liveClientToRow((data as any) as unknown as LiveClientRecord);
-
-  // Separately fetch certificates
-  try {
-    const certs = await fetchCertificates(id);
-    clientRow.certificates = certs;
-    clientRow.certifications = certs.map(c => `${c.certificate_name}${c.acquisition_date ? ` (${c.acquisition_date})` : ''}`).join(', ');
-  } catch (e) {
-    console.error('Failed to fetch certificates', e);
-  }
-
-  return clientRow;
+  return liveClientToRow((data as any) as unknown as LiveClientRecord);
 }
 
 export async function createClient(input: any): Promise<ClientRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
 
   const payload = {
-    client_name: input.name,
+    name: input.name,
     counselor_id: input.counselor_id,
     age: input.age,
-    gender_code: input.gender,
-    phone_encrypted: input.phone,
-    resident_id: input.resident_id,
-    birth_date: input.birth_date,
-    address_1: input.address_1,
-    address_2: input.address_2,
-    has_car: input.has_car,
-    can_drive: input.can_drive,
-    MBTI: input.MBTI,
-    is_working_parttime: input.is_working_parttime,
-    future_card_stat: input.future_card_stat ? 1 : 0,
-    desired_job_1: input.desired_job_1,
-    desired_job_2: input.desired_job_2,
-    desired_job_3: input.desired_job_3,
-    desired_area_1: input.desired_area_1,
-    desired_area_2: input.desired_area_2,
-    desired_area_3: input.desired_area_3,
-    desired_payment: input.desired_payment,
+    gender: input.gender,
+    phone: input.phone,
+    address: input.address,
+    desired_job: input.desired_job,
     education_level: input.education_level,
-    school_name: input.school,
+    school: input.school,
     major: input.major,
-    business_type_code: input.business_type ? Number(input.business_type) : null,
+    business_type: input.business_type,
     participation_type: input.participation_type,
     participation_stage: input.participation_stage,
-    memo: input.memo,
-    email: input.email,
+    counsel_notes: input.counsel_notes,
+    branch: input.branch,
   };
 
   const { data, error } = await runQuery<LiveClientRecord>(
     '고객 등록',
     sb()
-      .from('client')
+      .from('clients')
       .insert(payload)
       .select(CLIENT_SELECT_FIELDS)
       .single(),
@@ -336,9 +342,9 @@ export async function updateClient(id: string, updates: Partial<LiveClientRecord
   try {
     if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
     const { data, error } = await sb()
-      .from('client')
+      .from('clients')
       .update(updates)
-      .eq('client_id', Number(id))
+      .eq('id', id)
       .select(CLIENT_SELECT_FIELDS)
       .single();
 
@@ -354,48 +360,34 @@ export async function deleteClient(id: string): Promise<void> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
   const { error } = await runQuery<null>(
     '고객 삭제',
-    sb().from('client').delete().eq('client_id', Number(id)),
+    sb().from('clients').delete().eq('id', id),
   );
   if (error) throw error;
 }
 
 /**
  * 사업 유형 코드 목록 조회 (business_code)
+ * NOTE(2026-08-26): public.clients 스키마에는 business_code 테이블이 없다. 빈 배열로 폴백.
  */
 export async function fetchBusinessCodes(): Promise<{ value: string; label: string }[]> {
-  if (!isSupabaseConfigured()) return [];
-
-  const { data, error } = await sb()
-    .from('business_code')
-    .select('business_type, participate_type')
-    .order('business_type');
-
-  if (error) throw error;
-  return (data || []).map((b: any) => ({
-    value: String(b.business_type),
-    label: b.participate_type || `유형 ${b.business_type}`
-  }));
+  return [];
 }
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
-const SESSION_SELECT_FIELDS =
-  'counsel_id, client_id, user_id, counsel_date, start_time, end_time, session_number, counselor_opinion, counsel_type, document_link, economic_situation, social_situation_family, social_situation_society, self_esteem, self_efficacy, holland_code, career_fluidity, info_gathering, personality_test_result, life_history_result, profiling_grade, memo, create_at';
+// public.sessions 테이블 컬럼 (2026-08-26 확정 — 실데이터 보유 테이블, 코드를 여기에 맞춤)
+const SESSION_SELECT_FIELDS = 'id, client_id, date, type, content, counselor_name, counselor_id, next_action, created_at';
 
 export async function fetchSessions(clientId: string): Promise<SessionRow[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const numericClientId = Number(clientId);
-  if (Number.isNaN(numericClientId)) return [];
-
   const { data, error } = await runQuery<LiveCounselHistoryRecord[]>(
     '상담 이력 조회',
     sb()
-      .from('counsel_history')
+      .from('sessions')
       .select(SESSION_SELECT_FIELDS)
-      .eq('client_id', numericClientId)
-      .order('counsel_date', { ascending: false })
-      .order('start_time', { ascending: false }),
+      .eq('client_id', clientId)
+      .order('date', { ascending: false }),
   );
 
   if (error) throw error;
@@ -404,40 +396,22 @@ export async function fetchSessions(clientId: string): Promise<SessionRow[]> {
 
 export async function createSession(input: SessionInsert): Promise<SessionRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-
-  const numericClientId = Number(input.client_id);
-  if (Number.isNaN(numericClientId)) throw new Error('유효한 상담자 ID가 아닙니다.');
+  if (!input.client_id) throw new Error('유효한 상담자 ID가 아닙니다.');
   if (!input.counselor_id) throw new Error('로그인한 상담사 정보가 없습니다.');
 
   const payload: any = {
-    client_id: numericClientId,
-    user_id: input.counselor_id,
-    counsel_date: input.date,
-    session_number: input.session_number ?? null,
-    start_time: input.start_time || null,
-    end_time: input.end_time || null,
-    counselor_opinion: input.content || input.memo || '',
-    counsel_type: input.type || '상담기록',
-    memo: input.memo || null,
-    economic_situation: input.economic_situation ?? null,
-    social_situation_family: input.social_situation_family ?? null,
-    social_situation_society: input.social_situation_society ?? null,
-    document_link: input.document_link || null,
-    self_esteem: input.self_esteem ?? null,
-    self_efficacy: input.self_efficacy ?? null,
-    holland_code: input.holland_code || null,
-    career_fluidity: input.career_fluidity ?? null,
-    info_gathering: input.info_gathering ?? null,
-    personality_test_result: input.personality_test_result || null,
-    life_history_result: input.life_history_result || null,
-    profiling_grade: input.profiling_grade || null,
-    create_at: input.date, // keep for compatibility
+    client_id: input.client_id,
+    counselor_id: input.counselor_id,
+    date: input.date,
+    content: input.content || null,
+    type: input.type || '상담기록',
+    next_action: input.next_action || null,
   };
 
   const { data, error } = await runQuery<LiveCounselHistoryRecord>(
     '상담 이력 등록',
     sb()
-      .from('counsel_history')
+      .from('sessions')
       .insert(payload)
       .select(SESSION_SELECT_FIELDS)
       .single(),
@@ -454,44 +428,33 @@ export async function createSession(input: SessionInsert): Promise<SessionRow> {
     '사후관리': '사후관리',
   };
 
-  const nextStage = autoStages[payload.counsel_type];
+  const nextStage = autoStages[payload.type];
   if (nextStage) {
     await sb()
-      .from('client')
+      .from('clients')
       .update({ participation_stage: nextStage })
-      .eq('client_id', numericClientId);
+      .eq('id', input.client_id);
   }
 
   return liveCounselHistoryToSessionRow(data as LiveCounselHistoryRecord);
 }
 
 /**
- * 참여수당 이력 (allowance_log)
+ * ── 참여수당 이력 / 자격증 (allowance_log, client_certificates) ──────────────
+ * NOTE(2026-08-26): public.clients 스키마(실데이터 보유, 코드를 이 스키마에 맞추기로 결정)에는
+ * allowance_log / client_certificates 테이블이 존재하지 않는다. 조회는 빈 배열로 안전하게
+ * 폴백하고, 쓰기 작업은 저장된 것처럼 보이는 걸 막기 위해 명시적으로 에러를 던진다.
+ * 이 기능을 다시 쓰려면 해당 테이블을 새로 만들어야 한다.
  */
-export async function fetchAllowanceLogs(clientId: string) {
-  if (!isSupabaseConfigured()) return [];
-  const { data, error } = await sb()
-    .from('allowance_log')
-    .select('*')
-    .eq('client_id', Number(clientId))
-    .order('round', { ascending: true });
-  if (error) throw error;
-  return data || [];
+export async function fetchAllowanceLogs(_clientId: string) {
+  return [];
 }
 
-export async function updateAllowanceLog(id: number, input: any) {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { data, error } = await sb()
-    .from('allowance_log')
-    .update(input)
-    .eq('allowance_id', id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+export async function updateAllowanceLog(_id: number, _input: any) {
+  throw new Error('참여수당 이력 기능은 현재 DB 스키마에서 지원되지 않습니다.');
 }
 
-export async function createAllowanceLog(input: {
+export async function createAllowanceLog(_input: {
   client_id: string;
   round: number;
   start_date: string;
@@ -503,88 +466,36 @@ export async function createAllowanceLog(input: {
   is_paid: boolean;
   activity_content?: string;
 }) {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-
-  const payload = {
-    client_id: Number(input.client_id),
-    round: input.round,
-    start_date: input.start_date,
-    end_date: input.end_date,
-    apply_date: input.apply_date,
-    has_income: input.has_income,
-    family_allowance_count: input.family_allowance_count,
-    expected_payment_date: input.expected_payment_date,
-    is_paid: input.is_paid,
-    activity_content: input.activity_content || null,
-  };
-
-  const { data, error } = await runQuery<Record<string, unknown>>(
-    '참여수당 이력 등록',
-    sb()
-      .from('allowance_log')
-      .insert(payload)
-      .select()
-      .single(),
-  );
-
-  if (error) throw error;
-  return data;
+  throw new Error('참여수당 이력 기능은 현재 DB 스키마에서 지원되지 않습니다.');
 }
 
-export async function addCertificate(clientId: string, name: string, date: string | null) {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { data, error } = await sb()
-    .from('client_certificates')
-    .insert({
-      client_id: Number(clientId),
-      certificate_name: name,
-      acquisition_date: date
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+export async function addCertificate(_clientId: string, _name: string, _date: string | null) {
+  throw new Error('자격증 기능은 현재 DB 스키마에서 지원되지 않습니다.');
 }
 
-export async function fetchCertificates(clientId: string): Promise<{ certificate_name: string; acquisition_date: string | null }[]> {
-  if (!isSupabaseConfigured()) return [];
-  const { data, error } = await sb()
-    .from('client_certificates')
-    .select('certificate_name, acquisition_date')
-    .eq('client_id', Number(clientId));
-  if (error) throw error;
-  return data || [];
+export async function fetchCertificates(_clientId: string): Promise<{ certificate_name: string; acquisition_date: string | null }[]> {
+  return [];
 }
 
-export async function deleteCertificate(clientId: string, name: string) {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { error } = await sb()
-    .from('client_certificates')
-    .delete()
-    .eq('client_id', Number(clientId))
-    .eq('certificate_name', name);
-  if (error) throw error;
+export async function deleteCertificate(_clientId: string, _name: string) {
+  throw new Error('자격증 기능은 현재 DB 스키마에서 지원되지 않습니다.');
 }
 
 export async function updateSession(id: string, input: Partial<any>): Promise<void> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
 
   const payload: any = {};
-  if (input.content !== undefined || input.counselor_opinion !== undefined) payload.counselor_opinion = input.content ?? input.counselor_opinion;
-  if (input.type !== undefined || input.counsel_type !== undefined) payload.counsel_type = input.type ?? input.counsel_type;
-  if (input.date !== undefined || input.counsel_date !== undefined) payload.counsel_date = input.date ?? input.counsel_date;
-  if (input.session_number !== undefined) payload.session_number = input.session_number;
-  if (input.memo !== undefined) payload.memo = input.memo;
-  if (input.economic_situation !== undefined) payload.economic_situation = input.economic_situation;
-  if (input.social_situation_family !== undefined) payload.social_situation_family = input.social_situation_family;
-  if (input.social_situation_society !== undefined) payload.social_situation_society = input.social_situation_society;
+  if (input.content !== undefined) payload.content = input.content;
+  if (input.type !== undefined) payload.type = input.type;
+  if (input.date !== undefined) payload.date = input.date;
+  if (input.next_action !== undefined) payload.next_action = input.next_action;
 
   const { error } = await runQuery<null>(
     '상담 이력 수정',
     sb()
-      .from('counsel_history')
+      .from('sessions')
       .update(payload)
-      .eq('counsel_id', Number(id)),
+      .eq('id', id),
   );
 
   if (error) throw error;
@@ -592,11 +503,9 @@ export async function updateSession(id: string, input: Partial<any>): Promise<vo
 
 export async function deleteSession(id: string): Promise<void> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const counselId = Number(id);
-  if (Number.isNaN(counselId)) throw new Error('유효한 상담 이력 ID가 아닙니다.');
   const { error } = await runQuery<null>(
     '상담 이력 삭제',
-    sb().from('counsel_history').delete().eq('counsel_id', counselId),
+    sb().from('sessions').delete().eq('id', id),
   );
   if (error) throw error;
 }
@@ -854,99 +763,74 @@ function liveClientToRow(row: LiveClientRecord): ClientRow {
   };
 
   const createdAt = parseSafeDate(row.created_at);
-  const updatedAt = row.update_at ? parseSafeDate(row.update_at) : createdAt;
+  const updatedAt = row.updated_at ? parseSafeDate(row.updated_at) : createdAt;
 
   return {
-    id: String(row.client_id),
-    seq_no: row.client_id ?? null,
-    year: createdAt ? new Date(createdAt).getFullYear() : null,
-    assignment_type: null,
-    name: row.client_name,
-    resident_id_masked: null,
-    phone: row.phone_encrypted ?? null,
-    last_counsel_date: null,
+    id: row.id,
+    seq_no: row.seq_no ?? null,
+    year: row.year ?? null,
+    assignment_type: row.assignment_type ?? null,
+    name: row.name,
+    resident_id_masked: row.resident_id_masked ?? null,
+    phone: row.phone ?? null,
+    last_counsel_date: row.last_counsel_date ?? null,
     age: row.age ?? null,
-    gender: row.gender_code === 'M' ? '남' : row.gender_code === 'F' ? '여' : null,
-    birth_date: row.birth_date ?? null,
-    email: row.email ?? null,
-    MBTI: row.MBTI ?? null,
-    certifications: row.client_certificates ? row.client_certificates.map(c => `${c.certificate_name}${c.acquisition_date ? ` (${c.acquisition_date})` : ''}`).join(', ') : null,
-    certificates: row.client_certificates || [],
-    future_card_stat: row.future_card_stat ?? null,
-    business_type: row.business_type_code != null ? String(row.business_type_code) : null,
+    gender: row.gender ?? null,
+    business_type: row.business_type ?? null,
     participation_type: row.participation_type ?? null,
     participation_stage: row.participation_stage ?? null,
-    capa: row.capa ?? null,
-    recognition_date: null,
-    desired_job: row.desired_job_1 ?? null,
-    desired_job_1: row.desired_job_1 ?? null,
-    desired_job_2: row.desired_job_2 ?? null,
-    desired_job_3: row.desired_job_3 ?? null,
-    desired_area_1: row.desired_area_1 ?? null,
-    desired_area_2: row.desired_area_2 ?? null,
-    desired_area_3: row.desired_area_3 ?? null,
-    desired_payment: row.desired_payment ?? null,
-    counsel_notes: null,
-    address: null,
-    address_1: row.address_1 ?? null,
-    address_2: row.address_2 ?? null,
-    has_car: (row.has_car === true || row.has_car === 'Y') ? true : (row.has_car === false || row.has_car === 'N' ? false : null),
-    is_working_parttime: (row.is_working_parttime === true || row.is_working_parttime === 'Y') ? true : (row.is_working_parttime === false || row.is_working_parttime === 'N' ? false : null),
-    can_drive: (row.can_drive === true || row.can_drive === 'Y') ? true : (row.can_drive === false || row.can_drive === 'N' ? false : null),
-    school_name: row.school_name ?? null,
+    competency_grade: row.competency_grade ?? null,
+    recognition_date: row.recognition_date ?? null,
+    desired_job: row.desired_job ?? null,
+    counsel_notes: row.counsel_notes ?? null,
+    address: row.address ?? null,
+    school: row.school ?? null,
     major: row.major ?? null,
     education_level: row.education_level ?? null,
-    initial_counsel_date: createdAt ? createdAt.split('T')[0] : null,
-    iap_date: null,
-    iap_duration: null,
-    allowance_apply_date: null,
-    rediagnosis_date: row.retest_date ?? null,
-    rediagnosis_yn: row.retest_stat != null ? String(row.retest_stat) : null,
-    work_exp_type: null,
-    work_exp_intent: null,
-    work_exp_company: null,
-    work_exp_period: null,
-    work_exp_completed: null,
-    hire_place: row.hire_place ?? null,
-    hire_job_type: row.hire_job_type ?? null,
-    hire_date: row.hire_date ?? null,
-    hire_payment: row.hire_payment ?? null,
-    employment_type: row.hire_type ?? null,
-    employment_duration: null,
-    training_name: null,
-    training_start: null,
-    training_end: row.job_place_end ?? null,
-    training_allowance: null,
-    intensive_start: null,
-    intensive_end: null,
-    support_end_date: null,
-    continue_serv_1_date: row.continue_serv_1_date ?? null,
-    continue_serv_1_stat: row.continue_serv_1_stat ?? null,
-    continue_serv_6_date: row.continue_serv_6_date ?? null,
-    continue_serv_6_stat: row.continue_serv_6_stat ?? null,
-    continue_serv_12_date: row.continue_serv_12_date ?? null,
-    continue_serv_12_stat: row.continue_serv_12_stat ?? null,
-    continue_serv_18_date: row.continue_serv_18_date ?? null,
-    continue_serv_18_stat: row.continue_serv_18_stat ?? null,
-    counselor_name: null,
+    initial_counsel_date: row.initial_counsel_date ?? null,
+    iap_date: row.iap_date ?? null,
+    iap_duration: row.iap_duration ?? null,
+    allowance_apply_date: row.allowance_apply_date ?? null,
+    rediagnosis_date: row.rediagnosis_date ?? null,
+    rediagnosis_yn: row.rediagnosis_yn ?? null,
+    work_exp_type: row.work_exp_type ?? null,
+    work_exp_intent: row.work_exp_intent ?? null,
+    work_exp_company: row.work_exp_company ?? null,
+    work_exp_period: row.work_exp_period ?? null,
+    work_exp_completed: row.work_exp_completed ?? null,
+    training_name: row.training_name ?? null,
+    training_start: row.training_start ?? null,
+    training_end: row.training_end ?? null,
+    training_allowance: row.training_allowance ?? null,
+    intensive_start: row.intensive_start ?? null,
+    intensive_end: row.intensive_end ?? null,
+    support_end_date: row.support_end_date ?? null,
+    employment_type: row.employment_type ?? null,
+    employment_date: row.employment_date ?? null,
+    employer: row.employer ?? null,
+    job_title: row.job_title ?? null,
+    salary: row.salary ?? null,
+    employment_duration: row.employment_duration ?? null,
+    resignation_date: row.resignation_date ?? null,
+    retention_1m_date: row.retention_1m_date ?? null,
+    retention_1m_yn: row.retention_1m_yn ?? null,
+    retention_6m_date: row.retention_6m_date ?? null,
+    retention_6m_yn: row.retention_6m_yn ?? null,
+    retention_12m_date: row.retention_12m_date ?? null,
+    retention_12m_yn: row.retention_12m_yn ?? null,
+    retention_18m_date: row.retention_18m_date ?? null,
+    retention_18m_yn: row.retention_18m_yn ?? null,
+    counselor_name: row.counselor_name ?? null,
     counselor_id: row.counselor_id ?? null,
-    branch: null,
-    follow_up: false,
-    score: null,
-    iap_to: row.iap_to ?? null,
-    retest_stat: row.retest_stat ?? null,
-    memo: row.memo ?? null,
-    participate_type: Array.isArray(row.business_code)
-      ? row.business_code[0]?.participate_type ?? null
-      : null,
+    branch: row.branch ?? null,
+    follow_up: row.follow_up ?? null,
+    score: row.score ?? null,
     created_at: createdAt,
-    update_at: updatedAt,
+    updated_at: updatedAt,
   };
 }
 
 function liveCounselHistoryToSessionRow(row: LiveCounselHistoryRecord): SessionRow {
-  const decoded = decodeSessionPayload(row.counselor_opinion, '일반상담');
-
   const parseSafeDate = (dateStr: string | null | undefined): string => {
     if (!dateStr) return new Date().toISOString();
     const d = new Date(dateStr);
@@ -954,31 +838,15 @@ function liveCounselHistoryToSessionRow(row: LiveCounselHistoryRecord): SessionR
   };
 
   return {
-    id: String(row.counsel_id),
-    client_id: String(row.client_id),
-    date: row.counsel_date,
-    type: row.counsel_type || decoded.type,
-    content: row.counsel_type ? row.counselor_opinion : decoded.content,
-    counselor_name: null,
-    counselor_id: row.user_id ?? null,
-    next_action: decoded.nextAction,
-    session_number: row.session_number ?? null,
-    start_time: row.start_time ?? null,
-    end_time: row.end_time ?? null,
-    document_link: row.document_link ?? null,
-    economic_situation: row.economic_situation ?? null,
-    social_situation_family: row.social_situation_family ?? null,
-    social_situation_society: row.social_situation_society ?? null,
-    self_esteem: row.self_esteem ?? null,
-    self_efficacy: row.self_efficacy ?? null,
-    holland_code: row.holland_code ?? null,
-    career_fluidity: row.career_fluidity ?? null,
-    info_gathering: row.info_gathering ?? null,
-    personality_test_result: row.personality_test_result ?? null,
-    life_history_result: row.life_history_result ?? null,
-    profiling_grade: row.profiling_grade ?? null,
-    memo: row.memo ?? null,
-    created_at: parseSafeDate(row.create_at ?? row.counsel_date),
+    id: row.id,
+    client_id: row.client_id,
+    date: row.date,
+    type: row.type || '일반상담',
+    content: row.content,
+    counselor_name: row.counselor_name ?? null,
+    counselor_id: row.counselor_id ?? null,
+    next_action: row.next_action,
+    created_at: parseSafeDate(row.created_at ?? row.date),
   };
 }
 

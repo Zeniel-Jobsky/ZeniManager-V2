@@ -83,9 +83,9 @@ export default function AdminClientList() {
   const stages = ['all', '초기상담', '심층상담', '취업지원', '취업완료', '사후관리'];
 
   const filtered = clients.filter(c => {
-    const nameToSearch = c.client_name || c.name || '';
-    const phoneToSearch = c.phone_encrypted || c.phone || '';
-    
+    const nameToSearch = c.name || '';
+    const phoneToSearch = c.phone || '';
+
     const matchSearch = !search ||
       nameToSearch.includes(search) ||
       phoneToSearch.includes(search) ||
@@ -137,87 +137,64 @@ export default function AdminClientList() {
   const handleExportCSV = () => {
     if (filtered.length === 0) return toast.error('내보낼 데이터가 없습니다.');
 
+    // NOTE(2026-08-26): public.clients 스키마 기준 필드 매핑 (코드를 이 스키마에 맞춤).
     const rows = filtered.map(c => {
-      // 1. 주민번호 합치기
-      let residentStr = '';
-      if (c.birth_date) {
-        const bStr = c.birth_date.replace(/-/g, '');
-        if (bStr.length >= 8) residentStr += bStr.substring(2);
-        else residentStr += c.birth_date;
-      }
-      if (c.resident_id) {
-        residentStr += residentStr ? '-' + c.resident_id : c.resident_id;
-      }
-
-      // 2. 일경험 참여기간 계산
-      let workExpPeriod = '';
-      if (c.work_ex_start && c.work_ex_end) {
-        const d1 = new Date(c.work_ex_start);
-        const d2 = new Date(c.work_ex_end);
-        if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
-          let months = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
-          if (d2.getDate() >= d1.getDate()) months += 1;
-          workExpPeriod = `${Math.max(1, months)}개월`;
-        }
-      }
-
-      // 3. 필드 매핑
       return [
-        c.seq_no ?? '', 
-        c.year ?? '', 
-        c.assignment_type ?? '', 
-        c.client_name || c.name || '', 
-        residentStr, 
-        c.phone_encrypted || c.phone || '', 
-        c.last_counsel_date ?? '', 
-        c.age ?? '', 
-        c.gender_code || c.gender || '', 
-        c.business_type_code ?? c.business_type ?? '',
-        c.participation_type ?? '', 
-        c.participation_stage ?? '', 
-        c.capa ?? '', 
-        c.notificate_date ?? c.recognition_date ?? '', 
-        c.desired_job_1 ?? c.desired_job ?? '', 
-        c.memo ?? c.counsel_notes ?? '', 
-        [c.address_1, c.address_2].filter(Boolean).join(' ') || c.address || '', 
-        c.school_name ?? '', 
-        c.major ?? '', 
+        c.seq_no ?? '',
+        c.year ?? '',
+        c.assignment_type ?? '',
+        c.name ?? '',
+        c.resident_id_masked ?? '',
+        c.phone ?? '',
+        c.last_counsel_date ?? '',
+        c.age ?? '',
+        c.gender ?? '',
+        c.business_type ?? '',
+        c.participation_type ?? '',
+        c.participation_stage ?? '',
+        c.competency_grade ?? '',
+        c.recognition_date ?? '',
+        c.desired_job ?? '',
+        c.counsel_notes ?? '',
+        c.address ?? '',
+        c.school ?? '',
+        c.major ?? '',
         c.education_level ?? '',
-        c.created_at ? c.created_at.split('T')[0] : (c.initial_counsel_date || ''), 
-        c.iap_to ?? c.iap_date ?? '', 
-        c.iap_todate ?? c.iap_duration ?? '', 
-        c.allowance_apply_date ?? '', 
-        c.retest_date ?? c.rediagnosis_date ?? '', 
-        c.retest_stat !== undefined && c.retest_stat !== null ? String(c.retest_stat) : (c.rediagnosis_yn || ''), 
-        c.work_ex_type !== undefined && c.work_ex_type !== null ? String(c.work_ex_type) : (c.work_exp_type || ''), 
-        c.work_ex_desire !== undefined && c.work_ex_desire !== null ? String(c.work_ex_desire) : (c.work_exp_intent || ''), 
-        c.work_ex_company ?? c.work_exp_company ?? '', 
-        workExpPeriod, 
-        c.work_ex_graduate !== undefined && c.work_ex_graduate !== null ? String(c.work_ex_graduate) : (c.work_exp_completed || ''), 
-        c.training_name ?? '', 
-        c.training_start ?? '', 
-        c.training_end ?? '', 
-        c.training_allowance ?? '', 
-        c.job_place_start ?? c.intensive_start ?? '', 
-        c.job_place_end ?? c.intensive_end ?? '', 
-        c.job_place_support_end ?? c.support_end_date ?? '', 
-        c.hire_type ?? '', 
-        c.hire_date ?? '', 
-        c.hire_place ?? '', 
-        c.hire_job_type ?? '', 
-        c.hire_payment ?? '', 
-        c.employment_duration ?? '', 
-        c.retirement_date ?? '', 
-        c.continue_serv_1_date ?? '', 
-        c.continue_serv_1_stat !== undefined && c.continue_serv_1_stat !== null ? String(c.continue_serv_1_stat) : '', 
-        c.continue_serv_6_date ?? '', 
-        c.continue_serv_6_stat !== undefined && c.continue_serv_6_stat !== null ? String(c.continue_serv_6_stat) : '', 
-        c.continue_serv_12_date ?? '', 
-        c.continue_serv_12_stat !== undefined && c.continue_serv_12_stat !== null ? String(c.continue_serv_12_stat) : '', 
-        c.continue_serv_18_date ?? '', 
-        c.continue_serv_18_stat !== undefined && c.continue_serv_18_stat !== null ? String(c.continue_serv_18_stat) : '', 
-        c.counselor_name ?? '', 
-        c.branch ?? '' 
+        c.initial_counsel_date ?? '',
+        c.iap_date ?? '',
+        c.iap_duration ?? '',
+        c.allowance_apply_date ?? '',
+        c.rediagnosis_date ?? '',
+        c.rediagnosis_yn ?? '',
+        c.work_exp_type ?? '',
+        c.work_exp_intent ?? '',
+        c.work_exp_company ?? '',
+        c.work_exp_period ?? '',
+        c.work_exp_completed ?? '',
+        c.training_name ?? '',
+        c.training_start ?? '',
+        c.training_end ?? '',
+        c.training_allowance ?? '',
+        c.intensive_start ?? '',
+        c.intensive_end ?? '',
+        c.support_end_date ?? '',
+        c.employment_type ?? '',
+        c.employment_date ?? '',
+        c.employer ?? '',
+        c.job_title ?? '',
+        c.salary ?? '',
+        c.employment_duration ?? '',
+        c.resignation_date ?? '',
+        c.retention_1m_date ?? '',
+        c.retention_1m_yn ?? '',
+        c.retention_6m_date ?? '',
+        c.retention_6m_yn ?? '',
+        c.retention_12m_date ?? '',
+        c.retention_12m_yn ?? '',
+        c.retention_18m_date ?? '',
+        c.retention_18m_yn ?? '',
+        c.counselor_name ?? '',
+        c.branch ?? '',
       ];
     });
 
@@ -518,9 +495,9 @@ export default function AdminClientList() {
                     </tr>
                   ) : (
                     paginatedData.map((c, idx) => {
-                      const displayName = c.client_name || c.name || '';
+                      const displayName = c.name || '';
                       return (
-                        <tr key={c.id || c.client_id || idx} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                        <tr key={c.id || idx} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <div
@@ -532,12 +509,12 @@ export default function AdminClientList() {
                               <div>
                                 <div className="font-medium text-foreground">{displayName}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {(c.gender_code || c.gender) && `${c.gender_code || c.gender}`}{c.age && `, ${c.age}세`}
+                                  {c.gender && `${c.gender}`}{c.age && `, ${c.age}세`}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{c.phone_encrypted || c.phone || '-'}</td>
+                          <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{c.phone || '-'}</td>
                           <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{c.counselor_name || '-'}</td>
                           <td className="px-4 py-3 text-muted-foreground hidden xl:table-cell">{c.branch || '-'}</td>
                           <td className="px-4 py-3">
@@ -546,10 +523,10 @@ export default function AdminClientList() {
                               : <span className="text-muted-foreground">-</span>
                             }
                           </td>
-                          <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{c.business_type_code || c.business_type || '-'}</td>
+                          <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{c.business_type || '-'}</td>
                           <td className="px-4 py-3 hidden sm:table-cell">
-                            {c.hire_type
-                              ? <span className="badge-completed">{c.hire_type}</span>
+                            {c.employment_type
+                              ? <span className="badge-completed">{c.employment_type}</span>
                               : <span className="text-muted-foreground text-xs">미취업</span>
                             }
                           </td>
