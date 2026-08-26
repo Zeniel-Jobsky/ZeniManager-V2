@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.json",
   "include": [
     "deno-shim.d.ts",
+    "manual-chat/**/*.ts",
     "recommend-job-postings/**/*.ts",
     "_shared/job-postings/**/*.ts"
   ],

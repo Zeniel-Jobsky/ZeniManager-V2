@@ -217,8 +217,6 @@ export default function ClientRegister() {
         gender: form.gender,
         phone: form.phone,
         email: form.email, // 추가된 이메일 필드 매핑
-        address_1: form.address_1,
-        address_2: form.address_2,
         has_car: form.has_car,
         can_drive: form.can_drive,
         education_level: form.education_level || null,
@@ -254,13 +252,6 @@ export default function ClientRegister() {
           ? `${form.work_ex_start} ~ ${form.work_ex_end}`
           : null,
         work_exp_completed: { '1': '수료', '0': '미수료' }[form.work_ex_graduate] || null,
-        // NOTE(2026-08-26): clients 스키마에는 희망직무가 단일 필드(desired_job)뿐이라
-        // 1~3순위를 콤마로 이어붙여 하나의 컬럼에 저장한다 (취업 정보 세부 항목도 마찬가지로
-        // hire_* 세부는 저장할 곳이 없어 대표값만 저장).
-        desired_job: [form.desired_job_1, form.desired_job_2, form.desired_job_3]
-          .map(v => v?.trim())
-          .filter((v): v is string => Boolean(v))
-          .join(', ') || null,
         // address_1/address_2(옛 필드명)도 하나로 합쳐서 저장, capa는 competency_grade로 저장.
         address: [form.address_1, form.address_2].map(v => v?.trim()).filter(Boolean).join(' ') || null,
         competency_grade: form.capa || null,

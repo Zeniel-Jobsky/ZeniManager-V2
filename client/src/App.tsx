@@ -20,6 +20,7 @@ import Settings from "./pages/Settings";
 import CounselorDashboard from "./pages/counselor/Dashboard";
 import ClientList from "./pages/counselor/ClientList";
 import ClientRegister from "./pages/counselor/ClientRegister";
+import ManualRagChatPage from "./pages/counselor/ManualRagChat";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import CounselorList from "./pages/admin/CounselorList";
 import AdminClientList from "./pages/admin/AdminClientList";
@@ -97,6 +98,9 @@ function AppRoutes() {
       </Route>
       <Route path="/dashboard/memo">
         <GuardedRoute component={CounselorDashboard} requirement="counselor" />
+      </Route>
+      <Route path="/dashboard/manual">
+        <GuardedRoute component={ManualRagChatPage} requirement="counselor" />
       </Route>
       <Route path="/dashboard">
         <GuardedRoute component={CounselorDashboard} requirement="counselor" />
