@@ -17,6 +17,7 @@ export interface UserIdentity {
 
 export interface CounselorProfileRecord {
   id: string;
+  counselorId: string | null;
   name: string;
   department: string | null;
   role: unknown;
@@ -49,6 +50,11 @@ type RestCounselorProfileRecord = {
   role: unknown;
 };
 
+type RestCounselorIdentityRecord = {
+  id: string;
+  auth_user_id: string | null;
+};
+
 export function normalizeLoginEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -66,7 +72,7 @@ export function mapCounselorProfileToUser(
     role: normalizeAppRole(profile.role),
     department,
     branch: department,
-    counselorId: profile.id,
+    counselorId: profile.counselorId ?? undefined,
   };
 }
 
@@ -121,42 +127,59 @@ async function fetchCounselorProfileByAccessToken(
   requestUrl.searchParams.set('select', 'user_id,user_name,role,department');
   requestUrl.searchParams.set('user_id', `eq.${identity.authUserId}`);
 
-  const { data, error } = await executeSupabaseRequest<RestCounselorProfileRecord[]>(
-    '로그인 사용자 프로필 조회',
-    fetch(requestUrl.toString(), {
-      method: 'GET',
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-    }).then(async response => {
-      const responseText = await response.text();
-      const responseJson = responseText ? JSON.parse(responseText) : null;
+  const counselorRequestUrl = new URL('/rest/v1/counselors', supabaseUrl);
+  counselorRequestUrl.searchParams.set('select', 'id,auth_user_id');
+  counselorRequestUrl.searchParams.set('auth_user_id', `eq.${identity.authUserId}`);
 
-      return {
-        data: response.ok && Array.isArray(responseJson) ? responseJson as RestCounselorProfileRecord[] : null,
-        error: response.ok
-          ? null
-          : (typeof responseJson === 'object' && responseJson !== null
-            ? responseJson
-            : { message: response.statusText || '로그인 사용자 프로필 조회 실패' }),
-        status: response.status,
-      };
-    }),
-  );
+  const requestHeaders = {
+    apikey: supabaseAnonKey,
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/json',
+  };
 
-  if (error) {
-    throw error;
-  }
+  const parseRestResponse = async <T,>(response: Response) => {
+    const responseText = await response.text();
+    const responseJson = responseText ? JSON.parse(responseText) : null;
 
-  const profile = data?.[0];
+    return {
+      data: response.ok && Array.isArray(responseJson) ? responseJson as T[] : null,
+      error: response.ok
+        ? null
+        : (typeof responseJson === 'object' && responseJson !== null
+          ? responseJson
+          : { message: response.statusText || '로그인 사용자 프로필 조회 실패' }),
+      status: response.status,
+    };
+  };
+
+  const [profileResult, counselorResult] = await Promise.all([
+    executeSupabaseRequest<RestCounselorProfileRecord[]>(
+      '로그인 사용자 프로필 조회',
+      fetch(requestUrl.toString(), {
+        method: 'GET',
+        headers: requestHeaders,
+      }).then(response => parseRestResponse<RestCounselorProfileRecord>(response)),
+    ),
+    executeSupabaseRequest<RestCounselorIdentityRecord[]>(
+      '로그인 상담사 식별자 조회',
+      fetch(counselorRequestUrl.toString(), {
+        method: 'GET',
+        headers: requestHeaders,
+      }).then(response => parseRestResponse<RestCounselorIdentityRecord>(response)),
+    ),
+  ]);
+
+  if (profileResult.error) throw profileResult.error;
+  if (counselorResult.error) throw counselorResult.error;
+
+  const profile = profileResult.data?.[0];
   if (!profile) {
     return null;
   }
 
   return {
     id: profile.user_id,
+    counselorId: counselorResult.data?.[0]?.id ?? null,
     name: profile.user_name,
     department: profile.department,
     role: profile.role,
@@ -177,25 +200,32 @@ export function createCounselorProfileLookups(
 
   lookups.push(
     async ({ authUserId }) => {
-      const { data, error } = await sb
-        .from('user')
-        .select('user_id, user_name, role, department')
-        .eq('user_id', authUserId)
-        .maybeSingle();
+      const [profileResult, counselorResult] = await Promise.all([
+        sb
+          .from('user')
+          .select('user_id, user_name, role, department')
+          .eq('user_id', authUserId)
+          .maybeSingle(),
+        sb
+          .from('counselors')
+          .select('id, auth_user_id')
+          .eq('auth_user_id', authUserId)
+          .maybeSingle(),
+      ]);
 
-      if (error) {
-        throw error;
-      }
+      if (profileResult.error) throw profileResult.error;
+      if (counselorResult.error) throw counselorResult.error;
 
-      if (!data) {
+      if (!profileResult.data) {
         return null;
       }
 
       return {
-        id: data.user_id,
-        name: data.user_name,
-        department: data.department,
-        role: data.role,
+        id: profileResult.data.user_id,
+        counselorId: counselorResult.data?.id ?? null,
+        name: profileResult.data.user_name,
+        department: profileResult.data.department,
+        role: profileResult.data.role,
       };
     },
   );

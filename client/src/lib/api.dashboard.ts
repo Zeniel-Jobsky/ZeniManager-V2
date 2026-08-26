@@ -166,12 +166,23 @@ function assertDashboardSupabaseConfigured(scopeLabel: string): void {
   }
 }
 
-function assertDashboardRuntimeContract(scopeLabel: string, authUserId: string | null | undefined): string {
+function assertDashboardCounselorId(scopeLabel: string, counselorId: string | null | undefined): string {
+  assertDashboardSupabaseConfigured(scopeLabel);
+
+  const normalizedCounselorId = counselorId?.trim();
+  if (!normalizedCounselorId) {
+    throw new Error(`${scopeLabel} 기능을 호출하려면 public.counselors.id가 필요합니다.`);
+  }
+
+  return normalizedCounselorId;
+}
+
+function assertDashboardAuthUserId(scopeLabel: string, authUserId: string | null | undefined): string {
   assertDashboardSupabaseConfigured(scopeLabel);
 
   const normalizedAuthUserId = authUserId?.trim();
   if (!normalizedAuthUserId) {
-    throw new Error(`${scopeLabel} 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.`);
+    throw new Error(`${scopeLabel} 기능을 호출하려면 로그인한 사용자의 Auth UUID가 필요합니다.`);
   }
 
   return normalizedAuthUserId;
@@ -361,12 +372,10 @@ function createDashboardMonthlyBuckets(monthCount: number): DashboardMonthlyStat
 }
 
 export async function searchDashboardClients(
-  authUserId: string,
+  counselorId: string,
   rawQuery: string,
 ): Promise<ClientRow[]> {
-  // NOTE(2026-08-26): clients.counselor_id는 public.counselors(id)를 참조하므로
-  // 로그인 UUID로 직접 필터하면 안 된다 — RLS(clients_select)가 본인 소유만 걸러준다.
-  assertDashboardRuntimeContract('대시보드 검색', authUserId);
+  const scopedCounselorId = assertDashboardCounselorId('대시보드 검색', counselorId);
   const normalizedQuery = rawQuery.trim();
   if (!normalizedQuery) return [];
 
@@ -379,6 +388,7 @@ export async function searchDashboardClients(
     sb()
       .from('clients')
       .select(CLIENT_SELECT_FIELDS)
+      .eq('counselor_id', scopedCounselorId)
       .or(`name.ilike.${likeQuery},phone.ilike.${likeQuery},desired_job.ilike.${likeQuery}`)
       .order('updated_at', { ascending: false, nullsFirst: false })
       .limit(10),
@@ -388,24 +398,28 @@ export async function searchDashboardClients(
   return ((data ?? []) as LiveClientRecord[]).map(row => liveClientToRow(row));
 }
 
-export async function fetchDashboardStats(_authUserId?: string): Promise<DashboardStats> {
-  assertDashboardSupabaseConfigured('대시보드 통계');
+export async function fetchDashboardStats(counselorId: string): Promise<DashboardStats> {
+  const scopedCounselorId = assertDashboardCounselorId('대시보드 통계', counselorId);
 
-  // NOTE(2026-08-26): clients.counselor_id는 auth.uid()가 아니라 public.counselors(id)를
-  // 참조한다. 로그인 UUID로 직접 .eq('counselor_id', authUserId) 필터를 걸면 항상 0건이
-  // 나오는 버그가 있었다 — RLS(clients_select: is_admin() or counselor_id = get_my_counselor_id())가
-  // 이미 본인 소유 고객만 정확히 걸러주므로 앱단 필터는 제거하고 RLS에 위임한다.
+  // clients.counselor_id는 auth.uid()가 아니라 public.counselors.id를 참조한다.
+  // 로그인 단계에서 확인한 내부 PK로 명시적으로 범위를 제한하고 RLS도 함께 적용한다.
   const rawRows = await fetchAllPages<{
     participation_stage: string | null;
     score: number | null;
     retention_1m_yn: string | null;
-  }>('대시보드 통계 조회', (from, to) =>
-    sb()
+  }>('대시보드 통계 조회', (from, to) => {
+    const query = sb()
       .from('clients')
       .select('participation_stage, score, retention_1m_yn')
-      .range(from, to),
-  );
-  const rows = rawRows.map(row => ({ ...row, participation_stage: trimOrNull(row.participation_stage) }));
+      .eq('counselor_id', scopedCounselorId)
+      .range(from, to);
+
+    return query;
+  });
+  const rows = rawRows.map(row => ({
+    ...row,
+    participation_stage: trimOrNull(row.participation_stage),
+  }));
 
   const stageCounts = new Map<string, number>();
   const scores = rows
@@ -440,12 +454,10 @@ export async function fetchDashboardStats(_authUserId?: string): Promise<Dashboa
 }
 
 export async function fetchDashboardMonthlyStats(
-  authUserId: string,
+  counselorId: string,
   monthCount = 12,
 ): Promise<DashboardMonthlyStat[]> {
-  // NOTE(2026-08-26): sessions.counselor_id는 public.counselors(id)를 참조하므로
-  // 로그인 UUID로 직접 필터하면 안 된다 — RLS(sessions_select)가 본인 소유만 걸러준다.
-  assertDashboardRuntimeContract('대시보드 월간 통계', authUserId);
+  const scopedCounselorId = assertDashboardCounselorId('대시보드 월간 통계', counselorId);
   const monthKeys = buildRecentDashboardMonthKeys(monthCount);
   const [firstMonthKey, lastMonthKey] = [monthKeys[0], monthKeys[monthKeys.length - 1]];
   const rangeStart = `${firstMonthKey}-01`;
@@ -459,6 +471,7 @@ export async function fetchDashboardMonthlyStats(
     sb()
       .from('sessions')
       .select('client_id, date')
+      .eq('counselor_id', scopedCounselorId)
       .gte('date', rangeStart)
       .lte('date', rangeEnd)
       .range(from, to),
@@ -491,13 +504,11 @@ export async function fetchDashboardMonthlyStats(
 }
 
 export async function fetchDashboardCalendarMonthCounts(
-  authUserId: string,
+  counselorId: string,
   monthStart: string,
   monthEnd: string,
 ): Promise<Record<string, number>> {
-  // NOTE(2026-08-26): sessions/clients.counselor_id는 public.counselors(id)를 참조하므로
-  // 로그인 UUID로 직접 필터하면 안 된다 — RLS가 본인 소유만 걸러준다.
-  assertDashboardRuntimeContract('캘린더', authUserId);
+  const scopedCounselorId = assertDashboardCounselorId('캘린더', counselorId);
   assertDashboardDateRange('캘린더', monthStart, monthEnd);
 
   const histories = await fetchAllPages<{
@@ -507,6 +518,7 @@ export async function fetchDashboardCalendarMonthCounts(
     sb()
       .from('sessions')
       .select('client_id, date')
+      .eq('counselor_id', scopedCounselorId)
       .gte('date', monthStart)
       .lte('date', monthEnd)
       .range(from, to),
@@ -521,6 +533,7 @@ export async function fetchDashboardCalendarMonthCounts(
     sb()
       .from('clients')
       .select('id')
+      .eq('counselor_id', scopedCounselorId)
       .in('id', clientIds)
       .range(from, to),
   );
@@ -535,13 +548,11 @@ export async function fetchDashboardCalendarMonthCounts(
 }
 
 export async function fetchDashboardCalendarEntries(
-  authUserId: string,
+  counselorId: string,
   rangeStart: string,
   rangeEnd: string,
 ): Promise<DashboardCalendarEntry[]> {
-  // NOTE(2026-08-26): sessions/clients.counselor_id는 public.counselors(id)를 참조하므로
-  // 로그인 UUID로 직접 필터하면 안 된다 — RLS가 본인 소유만 걸러준다.
-  assertDashboardRuntimeContract('캘린더', authUserId);
+  const scopedCounselorId = assertDashboardCounselorId('캘린더', counselorId);
   assertDashboardDateRange('캘린더', rangeStart, rangeEnd);
 
   const histories = await fetchAllPages<{
@@ -553,6 +564,7 @@ export async function fetchDashboardCalendarEntries(
     sb()
       .from('sessions')
       .select('id, client_id, counselor_id, date')
+      .eq('counselor_id', scopedCounselorId)
       .gte('date', rangeStart)
       .lte('date', rangeEnd)
       .order('date', { ascending: false })
@@ -573,6 +585,7 @@ export async function fetchDashboardCalendarEntries(
     sb()
       .from('clients')
       .select('id, name, counselor_id, participation_stage')
+      .eq('counselor_id', scopedCounselorId)
       .in('id', clientIds)
       .range(from, to),
   );
@@ -597,7 +610,7 @@ export async function fetchDashboardCalendarEntries(
 }
 
 export async function fetchMyMemo(authUserId: string): Promise<string | null> {
-  const scopedAuthUserId = assertDashboardRuntimeContract('개인 메모', authUserId);
+  const scopedAuthUserId = assertDashboardAuthUserId('개인 메모', authUserId);
 
   const { data, error } = await runQuery<LiveUserMemoRecord | null>(
     '개인 메모 조회',
@@ -620,7 +633,7 @@ export async function fetchMyMemo(authUserId: string): Promise<string | null> {
 
 export async function updateMyMemo(authUserId: string, memo: string | null): Promise<string | null> {
   const normalizedMemo = normalizeMemoValue(memo);
-  const scopedAuthUserId = assertDashboardRuntimeContract('개인 메모', authUserId);
+  const scopedAuthUserId = assertDashboardAuthUserId('개인 메모', authUserId);
 
   const { error, count } = await runQuery<null>(
     '개인 메모 저장',

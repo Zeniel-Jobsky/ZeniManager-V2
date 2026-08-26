@@ -275,12 +275,27 @@ on public."user"
 for update
 to authenticated
 using (
-  user_id = auth.uid()
-  or public.is_current_user_admin()
+  public.is_current_user_admin()
+  or (user_id = auth.uid() and role = 5)
 )
 with check (
-  user_id = auth.uid()
-  or public.is_current_user_admin()
+  public.is_current_user_admin()
+  or (user_id = auth.uid() and role = 5)
+);
+
+drop policy if exists user_update_access_guard on public."user";
+create policy user_update_access_guard
+on public."user"
+as restrictive
+for update
+to authenticated
+using (
+  public.is_current_user_admin()
+  or (user_id = auth.uid() and role = 5)
+)
+with check (
+  public.is_current_user_admin()
+  or (user_id = auth.uid() and role = 5)
 );`;
 
     navigator.clipboard.writeText(sql).then(() => {

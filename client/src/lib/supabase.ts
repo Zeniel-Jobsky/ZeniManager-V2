@@ -460,7 +460,8 @@ export type SessionInsert = Omit<SessionRow, 'id' | 'created_at'> & { id?: strin
 
 // DB 스키마: public.user 테이블 기준
 export interface CounselorRow {
-  user_id: string;       // PK (uuid)
+  user_id: string;       // public.user.user_id / auth.users.id
+  counselor_id: string | null; // public.counselors.id; clients/sessions FK
   user_name: string;
   department: string;
   memo: string | null;           // 상담사 개인 메모 (Notepad)
@@ -480,8 +481,9 @@ export interface ManagerMemoRow {
   created_at?: string;
 }
 
-export type CounselorInsert = Omit<CounselorRow, 'client_count' | 'completed_count' | 'user_id'> & {
+export type CounselorInsert = Omit<CounselorRow, 'client_count' | 'completed_count' | 'user_id' | 'counselor_id'> & {
   user_id?: string;
+  counselor_id?: string | null;
 };
 
 export interface SurveyRow {

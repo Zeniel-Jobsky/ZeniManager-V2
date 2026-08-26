@@ -443,18 +443,18 @@ export default function CounselorDashboard() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const processSectionRef = useRef<HTMLDivElement | null>(null);
 
-  const dashboardAuthUserId = user?.id;
-  const calendarAuthUserId = user?.id;
+  const dashboardCounselorId = user?.counselorId;
+  const calendarCounselorId = user?.counselorId;
   const memoAuthUserId = user?.id;
   const todayKey = toDateKey(new Date());
   const currentRange = buildRange(calendarMode, selectedDate, todayKey, selectedPeriod);
   const isMemoDirty = memoValue !== savedMemoValue;
 
   const loadStats = useCallback(async () => {
-    if (!dashboardAuthUserId) {
+    if (!dashboardCounselorId) {
       setStats(null);
       setMonthlyStats([]);
-      setStatsError('대시보드 데이터를 불러오려면 로그인한 상담사 user_id가 필요합니다.');
+      setStatsError('대시보드 데이터를 불러오려면 연결된 상담사 정보가 필요합니다.');
       setStatsLoading(false);
       return;
     }
@@ -462,8 +462,8 @@ export default function CounselorDashboard() {
     setStatsLoading(true);
     try {
       const [nextStats, nextMonthlyStats] = await Promise.all([
-        fetchDashboardStats(dashboardAuthUserId),
-        fetchDashboardMonthlyStats(dashboardAuthUserId),
+        fetchDashboardStats(dashboardCounselorId),
+        fetchDashboardMonthlyStats(dashboardCounselorId),
       ]);
       setStats(nextStats);
       setMonthlyStats(nextMonthlyStats);
@@ -477,7 +477,7 @@ export default function CounselorDashboard() {
     } finally {
       setStatsLoading(false);
     }
-  }, [dashboardAuthUserId]);
+  }, [dashboardCounselorId]);
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
@@ -512,16 +512,16 @@ export default function CounselorDashboard() {
       return;
     }
     const timer = setTimeout(async () => {
-      if (!dashboardAuthUserId) {
+      if (!dashboardCounselorId) {
         setSearchResults([]);
-        setSearchError('검색을 수행하려면 로그인한 상담사 user_id가 필요합니다.');
+        setSearchError('검색을 수행하려면 연결된 상담사 정보가 필요합니다.');
         setSearching(false);
         return;
       }
 
       setSearching(true);
       try {
-        const results = await searchDashboardClients(dashboardAuthUserId, searchQuery);
+        const results = await searchDashboardClients(dashboardCounselorId, searchQuery);
         setSearchResults(results);
         setSearchError(null);
       } catch (e: any) {
@@ -532,19 +532,19 @@ export default function CounselorDashboard() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [dashboardAuthUserId, searchQuery]);
+  }, [dashboardCounselorId, searchQuery]);
 
   const loadCalendarMonth = useCallback(async () => {
-    if (!calendarAuthUserId) {
+    if (!calendarCounselorId) {
       setMonthCounts({});
-      setCalendarError('캘린더 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.');
+      setCalendarError('캘린더 기능을 호출하려면 연결된 상담사 정보가 필요합니다.');
       return;
     }
 
     setMonthLoading(true);
     try {
       const counts = await fetchDashboardCalendarMonthCounts(
-        calendarAuthUserId,
+        calendarCounselorId,
         toDateKey(startOfMonth(calendarMonth)),
         toDateKey(endOfMonth(calendarMonth)),
       );
@@ -555,18 +555,18 @@ export default function CounselorDashboard() {
     } finally {
       setMonthLoading(false);
     }
-  }, [calendarAuthUserId, calendarMonth]);
+  }, [calendarCounselorId, calendarMonth]);
 
   const loadCalendarEntries = useCallback(async () => {
-    if (!calendarAuthUserId) {
+    if (!calendarCounselorId) {
       setCalendarEntries([]);
-      setCalendarError('캘린더 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.');
+      setCalendarError('캘린더 기능을 호출하려면 연결된 상담사 정보가 필요합니다.');
       return;
     }
 
     setEntriesLoading(true);
     try {
-      const entries = await fetchDashboardCalendarEntries(calendarAuthUserId, currentRange.start, currentRange.end);
+      const entries = await fetchDashboardCalendarEntries(calendarCounselorId, currentRange.start, currentRange.end);
       setCalendarEntries(entries);
       setCalendarError(null);
     } catch (e: any) {
@@ -574,7 +574,7 @@ export default function CounselorDashboard() {
     } finally {
       setEntriesLoading(false);
     }
-  }, [calendarAuthUserId, currentRange.end, currentRange.start]);
+  }, [calendarCounselorId, currentRange.end, currentRange.start]);
 
   useEffect(() => {
     if (activeTab !== 'calendar') return;

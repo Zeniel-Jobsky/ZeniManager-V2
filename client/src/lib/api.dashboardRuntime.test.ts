@@ -122,20 +122,21 @@ describe('dashboard runtime APIs', () => {
 
     await expect(fetchMyMemo('auth-1')).rejects.toThrow('개인 메모 기능을 사용하려면 Supabase 설정이 필요합니다.');
     await expect(updateMyMemo('auth-1', 'memo')).rejects.toThrow('개인 메모 기능을 사용하려면 Supabase 설정이 필요합니다.');
-    await expect(fetchDashboardCalendarMonthCounts('auth-1', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 사용하려면 Supabase 설정이 필요합니다.');
-    await expect(fetchDashboardCalendarEntries('auth-1', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 사용하려면 Supabase 설정이 필요합니다.');
+    await expect(fetchDashboardCalendarMonthCounts('counselor-1', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 사용하려면 Supabase 설정이 필요합니다.');
+    await expect(fetchDashboardCalendarEntries('counselor-1', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 사용하려면 Supabase 설정이 필요합니다.');
   });
 
   it('throws explicit errors when auth user id is missing', async () => {
-    await expect(fetchMyMemo('')).rejects.toThrow('개인 메모 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.');
-    await expect(updateMyMemo('   ', 'memo')).rejects.toThrow('개인 메모 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.');
-    await expect(fetchDashboardCalendarMonthCounts('', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.');
-    await expect(fetchDashboardCalendarEntries('', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 호출하려면 로그인한 상담사 user_id가 필요합니다.');
+    await expect(fetchMyMemo('')).rejects.toThrow('개인 메모 기능을 호출하려면 로그인한 사용자의 Auth UUID가 필요합니다.');
+    await expect(updateMyMemo('   ', 'memo')).rejects.toThrow('개인 메모 기능을 호출하려면 로그인한 사용자의 Auth UUID가 필요합니다.');
+    await expect(fetchDashboardStats('')).rejects.toThrow('대시보드 통계 기능을 호출하려면 public.counselors.id가 필요합니다.');
+    await expect(fetchDashboardCalendarMonthCounts('', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 호출하려면 public.counselors.id가 필요합니다.');
+    await expect(fetchDashboardCalendarEntries('', '2026-03-01', '2026-03-31')).rejects.toThrow('캘린더 기능을 호출하려면 public.counselors.id가 필요합니다.');
   });
 
   it('validates calendar date ranges before querying', async () => {
-    await expect(fetchDashboardCalendarMonthCounts('auth-1', '2026-03-31', '2026-03-01')).rejects.toThrow('캘린더 기능을 호출하려면 시작일이 종료일보다 늦지 않은 조회 기간이 필요합니다.');
-    await expect(fetchDashboardCalendarEntries('auth-1', '2026/03/01', '2026-03-31')).rejects.toThrow('캘린더 기능을 호출하려면 YYYY-MM-DD 형식의 조회 기간이 필요합니다.');
+    await expect(fetchDashboardCalendarMonthCounts('counselor-1', '2026-03-31', '2026-03-01')).rejects.toThrow('캘린더 기능을 호출하려면 시작일이 종료일보다 늦지 않은 조회 기간이 필요합니다.');
+    await expect(fetchDashboardCalendarEntries('counselor-1', '2026/03/01', '2026-03-31')).rejects.toThrow('캘린더 기능을 호출하려면 YYYY-MM-DD 형식의 조회 기간이 필요합니다.');
   });
 
   it('returns null when the live memo row does not exist', async () => {
@@ -166,7 +167,7 @@ describe('dashboard runtime APIs', () => {
       },
     });
 
-    await expect(fetchDashboardCalendarMonthCounts('auth-1', '2026-03-01', '2026-03-31')).resolves.toEqual({});
+    await expect(fetchDashboardCalendarMonthCounts('counselor-1', '2026-03-01', '2026-03-31')).resolves.toEqual({});
   });
 
   it('filters calendar month counts through counselor-owned clients', async () => {
@@ -190,7 +191,7 @@ describe('dashboard runtime APIs', () => {
       },
     }, queryLog);
 
-    const result = await fetchDashboardCalendarMonthCounts('auth-1', '2026-03-01', '2026-03-31');
+    const result = await fetchDashboardCalendarMonthCounts('counselor-1', '2026-03-01', '2026-03-31');
 
     expect(result).toEqual({
       '2026-03-10': 1,
@@ -198,6 +199,12 @@ describe('dashboard runtime APIs', () => {
     });
     // 소유권 필터는 앱 코드가 아니라 RLS(clients_select)가 담당하므로,
     // 여기서는 세션에서 발견된 client_id들로 소유권 검증 조회가 나가는지만 확인한다.
+    expect(queryLog).toContainEqual({
+      table: 'clients',
+      operation: 'select',
+      method: 'eq',
+      args: ['counselor_id', 'counselor-1'],
+    });
     expect(queryLog).toContainEqual({
       table: 'clients',
       operation: 'select',
@@ -211,21 +218,21 @@ describe('dashboard runtime APIs', () => {
       sessions: {
         select: {
           data: [
-            { id: '1', client_id: '10', counselor_id: 'auth-1', date: '2026-03-10' },
-            { id: '2', client_id: '20', counselor_id: 'auth-1', date: '2026-03-11' },
+            { id: '1', client_id: '10', counselor_id: 'counselor-1', date: '2026-03-10' },
+            { id: '2', client_id: '20', counselor_id: 'counselor-1', date: '2026-03-11' },
           ],
           error: null,
         },
       },
       clients: {
         select: {
-          data: [{ id: '20', name: '허용 고객', counselor_id: 'auth-1', participation_stage: '초기상담' }],
+          data: [{ id: '20', name: '허용 고객', counselor_id: 'counselor-1', participation_stage: '초기상담' }],
           error: null,
         },
       },
     });
 
-    await expect(fetchDashboardCalendarEntries('auth-1', '2026-03-01', '2026-03-31')).resolves.toEqual([
+    await expect(fetchDashboardCalendarEntries('counselor-1', '2026-03-01', '2026-03-31')).resolves.toEqual([
       {
         counselId: '2',
         clientId: '20',
@@ -253,7 +260,7 @@ describe('dashboard runtime APIs', () => {
       },
     });
 
-    const result = await fetchDashboardMonthlyStats('auth-1');
+    const result = await fetchDashboardMonthlyStats('counselor-1');
 
     expect(result).toHaveLength(12);
     expect(result.at(-2)).toEqual({ month: '2월', clients: 1, sessions: 1 });
@@ -276,7 +283,7 @@ describe('dashboard runtime APIs', () => {
       },
     });
 
-    await expect(fetchDashboardStats('auth-1')).resolves.toEqual({
+    await expect(fetchDashboardStats('counselor-1')).resolves.toEqual({
       totalClients: 5,
       inProgress: 3,
       employed: 2,
@@ -309,7 +316,7 @@ describe('dashboard runtime APIs', () => {
             {
               id: '7',
               name: '홍길동',
-              counselor_id: 'auth-1',
+              counselor_id: 'counselor-1',
               age: null,
               gender: null,
               phone: '010-1234-5678',
@@ -347,7 +354,7 @@ describe('dashboard runtime APIs', () => {
       },
     }, queryLog);
 
-    const result = await searchDashboardClients('auth-1', '홍길동');
+    const result = await searchDashboardClients('counselor-1', '홍길동');
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -360,6 +367,12 @@ describe('dashboard runtime APIs', () => {
     });
     // 소유권 필터는 앱 코드가 아니라 RLS(clients_select)가 담당하므로,
     // 여기서는 검색 조건(or)이 실제로 실렸는지만 확인한다.
+    expect(queryLog).toContainEqual({
+      table: 'clients',
+      operation: 'select',
+      method: 'eq',
+      args: ['counselor_id', 'counselor-1'],
+    });
     expect(queryLog).toContainEqual({
       table: 'clients',
       operation: 'select',

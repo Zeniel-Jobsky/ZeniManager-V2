@@ -386,7 +386,7 @@ function ClientDetailModal({
         type: newSession.type,
         content: newSession.content,
         counselor_name: user?.name || null,
-        counselor_id: user?.id || null,
+        counselor_id: user?.counselorId || null,
         next_action: newSession.nextAction || null,
       });
       toast.success('상담 내용이 저장되었습니다.');

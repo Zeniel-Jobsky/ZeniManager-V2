@@ -72,22 +72,19 @@ async function fetchAllPages<T>(
 }
 
 /**
- * clients/sessions/memo_cards.counselor_id는 로그인 UUID(auth.uid())가 아니라
- * public.counselors(id)를 참조한다 (FK 제약으로 확인됨, 2026-08-26).
- * 앱 곳곳에서 로그인 계정의 auth uid(예: user.counselorId, public.user.user_id)를
- * "담당 상담사"로 넘겨받는데, 이 함수로 실제 counselors.id를 찾아서 써야 한다.
- * 해당 auth uid가 counselors 테이블에 연결(auth_user_id)돼 있지 않으면 null을 반환한다.
+ * ID contract:
+ * - user.id: auth.users.id / public.user.user_id
+ * - user.counselorId: public.counselors.id
+ * - clients/sessions/memo_cards.counselor_id: public.counselors.id
+ *
+ * auth UUID -> counselors PK 변환은 로그인 프로필을 해석할 때 한 번만 수행한다.
+ * 이 데이터 계층이 받는 counselorId/counselor_id는 이미 내부 counselors PK다.
  */
-async function resolveCounselorRowId(authUserId: string): Promise<string | null> {
-  const { data, error } = await runQuery<{ id: string } | null>(
-    '상담사 프로필(counselors) 조회',
-    sb().from('counselors').select('id').eq('auth_user_id', authUserId).maybeSingle(),
-  );
-  if (error) throw error;
-  return (data as { id: string } | null)?.id ?? null;
+function normalizeCounselorRowId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized || null;
 }
-
-const UNMATCHABLE_UUID = '00000000-0000-0000-0000-000000000000';
 
 /**
  * clients.gender에는 '남'/'여'만 허용하는 CHECK 제약이 있다. 폼 등 일부 호출부가
@@ -309,10 +306,7 @@ const CLIENT_SELECT_FIELDS = `
 
 export async function fetchClients(counselorId?: string): Promise<ClientRow[]> {
   if (!isSupabaseConfigured()) return [];
-
-  // counselorId는 로그인 계정의 auth uid로 넘어오므로, 실제 clients.counselor_id가
-  // 참조하는 counselors.id로 변환해야 한다.
-  const resolvedCounselorRowId = counselorId ? await resolveCounselorRowId(counselorId) : null;
+  const scopedCounselorId = normalizeCounselorRowId(counselorId);
 
   const rows = await fetchAllPages<LiveClientRecord>('고객 목록 조회', (from, to) => {
     let q = sb()
@@ -321,7 +315,7 @@ export async function fetchClients(counselorId?: string): Promise<ClientRow[]> {
       .order('created_at', { ascending: false })
       .range(from, to);
 
-    if (counselorId) q = q.eq('counselor_id', resolvedCounselorRowId ?? UNMATCHABLE_UUID);
+    if (scopedCounselorId) q = q.eq('counselor_id', scopedCounselorId);
     return q;
   });
 
@@ -350,19 +344,11 @@ export async function fetchClientById(id: string): Promise<ClientRow | null> {
 
 export async function createClient(input: any): Promise<ClientRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-
-  // input.counselor_id는 로그인 계정의 auth uid로 넘어오므로, FK가 요구하는
-  // counselors.id로 변환해야 한다 (안 그러면 FK 위반으로 INSERT가 실패한다).
-  const resolvedCounselorRowId = input.counselor_id
-    ? await resolveCounselorRowId(input.counselor_id)
-    : null;
-  if (input.counselor_id && !resolvedCounselorRowId) {
-    throw new Error('로그인한 상담사 계정이 counselors 테이블과 연결되어 있지 않습니다. 관리자에게 문의하세요.');
-  }
+  const counselorRowId = normalizeCounselorRowId(input.counselor_id);
 
   const payload = {
     name: input.name,
-    counselor_id: resolvedCounselorRowId,
+    counselor_id: counselorRowId,
     age: input.age,
     gender: normalizeGender(input.gender),
     phone: input.phone,
@@ -459,17 +445,12 @@ export async function createSession(input: SessionInsert): Promise<SessionRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
   if (!input.client_id) throw new Error('유효한 상담자 ID가 아닙니다.');
   if (!input.counselor_id) throw new Error('로그인한 상담사 정보가 없습니다.');
-
-  // input.counselor_id는 로그인 계정의 auth uid로 넘어오므로, FK가 요구하는
-  // counselors.id로 변환해야 한다.
-  const resolvedCounselorRowId = await resolveCounselorRowId(input.counselor_id);
-  if (!resolvedCounselorRowId) {
-    throw new Error('로그인한 상담사 계정이 counselors 테이블과 연결되어 있지 않습니다. 관리자에게 문의하세요.');
-  }
+  const counselorRowId = normalizeCounselorRowId(input.counselor_id);
+  if (!counselorRowId) throw new Error('로그인한 상담사 정보가 없습니다.');
 
   const payload: any = {
     client_id: input.client_id,
-    counselor_id: resolvedCounselorRowId,
+    counselor_id: counselorRowId,
     date: input.date,
     content: input.content || null,
     type: input.type || '상담기록',
@@ -600,7 +581,35 @@ export async function fetchCounselors(): Promise<CounselorRow[]> {
   );
 
   if (error) throw error;
-  return (data ?? []).map((row: any) => {
+  const userRows = data ?? [];
+  const authUserIds = userRows
+    .map((row: any) => row.user_id)
+    .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+
+  const counselorIdByAuthUserId = new Map<string, string>();
+  if (authUserIds.length > 0) {
+    const { data: counselorRows, error: counselorError } = await runQuery<any[]>(
+      '상담사 내부 식별자 조회',
+      sb()
+        .from('counselors')
+        .select('id, auth_user_id')
+        .in('auth_user_id', authUserIds),
+    );
+
+    if (counselorError) {
+      // 상담사 기본 목록(public.user)은 계속 표시하되, 내부 ID가 필요한 집계/상세만
+      // 연결되지 않은 상태로 둔다. DB migration/RLS 미적용이 목록 전체를 숨기지 않게 한다.
+      console.warn('상담사 내부 식별자 매핑을 조회하지 못했습니다.', counselorError);
+    } else {
+      (counselorRows ?? []).forEach((row: any) => {
+        if (typeof row.auth_user_id === 'string' && typeof row.id === 'string') {
+          counselorIdByAuthUserId.set(row.auth_user_id, row.id);
+        }
+      });
+    }
+  }
+
+  return userRows.map((row: any) => {
     // 1:1 관계라도 배열 혹은 객체로 올 수 있어 유연하게 처리
     let memoValue = null;
     const rawMemo = row.manager_memo;
@@ -614,6 +623,7 @@ export async function fetchCounselors(): Promise<CounselorRow[]> {
 
     return {
       user_id: row.user_id,
+      counselor_id: counselorIdByAuthUserId.get(row.user_id) ?? null,
       user_name: row.user_name ?? '이름 미상',
       department: row.department ?? '',
       memo: row.memo ?? null,
@@ -665,6 +675,7 @@ export async function createCounselor(input: CounselorInsert): Promise<Counselor
 
   return {
     user_id: newUserId,
+    counselor_id: null,
     user_name: (data as any).user_name ?? '이름 미상',
     department: (data as any).department ?? '',
     memo: (data as any).memo ?? null,
@@ -757,17 +768,15 @@ export async function updateSurvey(id: string, input: any): Promise<SurveyRow> {
 
 export async function fetchMemoCards(counselorId: string): Promise<MemoCardRow[]> {
   if (!isSupabaseConfigured()) return [];
-
-  // counselorId는 로그인 계정의 auth uid로 넘어오므로, memo_cards.counselor_id가
-  // 참조하는 counselors.id로 변환해야 한다.
-  const resolvedCounselorRowId = await resolveCounselorRowId(counselorId);
+  const scopedCounselorId = normalizeCounselorRowId(counselorId);
+  if (!scopedCounselorId) return [];
 
   const { data, error } = await runQuery<MemoCardRow[]>(
     '메모 카드 조회',
     sb()
       .from('memo_cards')
       .select('*')
-      .eq('counselor_id', resolvedCounselorRowId ?? UNMATCHABLE_UUID)
+      .eq('counselor_id', scopedCounselorId)
       .order('sort_order', { ascending: true }),
   );
   if (error) throw error;

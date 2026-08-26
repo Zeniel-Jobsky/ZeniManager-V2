@@ -13,6 +13,7 @@
     "build": "vite build",
     "start": "vite preview",
     "check": "tsc --noEmit",
+    "check:edge": "tsc --noEmit -p supabase/functions/tsconfig.check.json",
     "format": "prettier --write .",
     "test": "vitest run --passWithNoTests",
     "postinstall": "node scripts/ensure-electron-install.cjs",

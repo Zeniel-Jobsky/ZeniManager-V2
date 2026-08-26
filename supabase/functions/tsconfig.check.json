@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": [
+    "deno-shim.d.ts",
+    "recommend-job-postings/**/*.ts",
+    "_shared/job-postings/**/*.ts"
+  ],
+  "exclude": ["**/*.test.ts"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "types": []
+  }
+}

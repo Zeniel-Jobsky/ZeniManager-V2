@@ -788,6 +788,22 @@ ipcMain.handle("admin-register-counselor", async (event, payload) => {
 
     if (dbError) throw dbError;
 
+    // 3. clients/sessions.counselor_id가 참조할 내부 상담사 행 생성
+    const { error: counselorError } = await supabaseAdminClient
+      .from("counselors")
+      .upsert([
+        {
+          auth_user_id: authData.user.id,
+          name: user_name,
+          email,
+          branch: department,
+          role: 5,
+          status: "재직",
+        },
+      ], { onConflict: "auth_user_id" });
+
+    if (counselorError) throw counselorError;
+
     return { success: true }; // 불필요한 데이터 전송 생략
   } catch (error) {
     console.error("상담사 등록 에러:", error); // 디버깅용 에러 로그는 유지

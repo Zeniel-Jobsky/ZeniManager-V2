@@ -165,6 +165,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
       );
 
+      if (resolvedUser.role === ROLE_COUNSELOR && !resolvedUser.counselorId) {
+        return {
+          success: false,
+          error: COUNSEL_ACCOUNT_NOT_FOUND_MESSAGE,
+        };
+      }
+
       return {
         success: true,
         user: resolvedUser,

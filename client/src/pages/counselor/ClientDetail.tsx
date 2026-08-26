@@ -36,11 +36,12 @@ import DaumPostcode from 'react-daum-postcode';
 import { CounselChatTab } from './CounselChatTab';
 import { ClientSummaryAnalysisTab } from './ClientSummaryAnalysisTab';
 import { EmploymentSuccessCaseCard } from './EmploymentSuccessCaseCard';
+import { JobRecommendationsTab } from './JobRecommendationsTab';
 import './ClientDetail.css';
 
 const PRIMARY = '#009C64';
 
-type ClientTab = 'manage' | 'history' | 'input' | 'survey' | 'summary' | 'chat';
+type ClientTab = 'manage' | 'history' | 'input' | 'survey' | 'summary' | 'jobs' | 'chat';
 
 const SUCCESS_CASE_SYNC_FIELDS = new Set([
   'employment_date',
@@ -608,7 +609,7 @@ export default function ClientDetail() {
         client_id: id,
         ...newSession,
         counselor_name: user?.name || null,
-        counselor_id: user?.id || null,
+        counselor_id: user?.counselorId || null,
       });
 
       toast.success('저장되었습니다.');
@@ -692,17 +693,23 @@ export default function ClientDetail() {
       <EmploymentSuccessCaseCard clientId={client.id} />
 
       {/* Tabs */}
-      <div className="counsel_tab_wrapper flex gap-1 border-b border-border pb-px overflow-x-auto mb-6">
+      <div className="counsel_tab_wrapper flex gap-1 border-b border-border pb-px overflow-x-auto mb-6" role="tablist" aria-label="내담자 상세 메뉴">
         {[ 
           { id: 'manage', label: '대시보드' },
           { id: 'history', label: '상담이력' },
           { id: 'input', label: '상담입력' },
           { id: 'survey', label: '구직준비도' },
           { id: 'summary', label: '요약 및 분석' },
+          { id: 'jobs', label: '채용공고 추천' },
           { id: 'chat', label: '챗봇' }
         ].map((tab) => (
           <button
             key={tab.id}
+            id={`client-tab-${tab.id}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls="client-tabpanel"
             onClick={() => setActiveTab(tab.id as ClientTab)}
             className={`counsel_tab_btn px-6 py-3 text-sm font-medium transition-all relative
               ${activeTab === tab.id ? 'text-primary after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary' : 'text-muted-foreground hover:text-foreground'}`}
@@ -713,7 +720,12 @@ export default function ClientDetail() {
       </div>
 
       {/* Content */}
-      <div className="counsel_content_card bg-card border border-border rounded-xl p-6 min-h-[500px] shadow-sm">
+      <div
+        id="client-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`client-tab-${activeTab}`}
+        className="counsel_content_card bg-card border border-border rounded-xl p-6 min-h-[500px] shadow-sm"
+      >
         {activeTab === 'manage' && (
           <div className="space-y-6 animate-in fade-in duration-500">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1375,6 +1387,7 @@ export default function ClientDetail() {
 
         {activeTab === 'survey' && <SurveyTab clientId={id!} />}
         {activeTab === 'summary' && <ClientSummaryAnalysisTab client={client!} />}
+        {activeTab === 'jobs' && <JobRecommendationsTab client={client!} />}
         {activeTab === 'chat' && <CounselChatTab client={client!} />}
       </div>
     </div>

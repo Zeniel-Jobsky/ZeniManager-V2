@@ -57,7 +57,11 @@ export default function AdminClientList() {
       .then(([clientsData, counselorsData]) => {
         setCounselors(counselorsData);
 
-        const counselorMap = new Map(counselorsData.map(c => [c.user_id, c]));
+        const counselorMap = new Map(
+          counselorsData
+            .filter(c => Boolean(c.counselor_id))
+            .map(c => [c.counselor_id as string, c]),
+        );
 
         const enrichedClients = clientsData.map(client => {
           const counselor = client.counselor_id ? counselorMap.get(client.counselor_id) : undefined;
@@ -287,7 +291,7 @@ export default function AdminClientList() {
             name: client_name, 
             phone_encrypted,
             phone: phone_encrypted, 
-            counselor_id: matchedCounselor ? matchedCounselor.user_id : undefined,
+            counselor_id: matchedCounselor?.counselor_id ?? undefined,
           };
 
           // 주민번호 분리

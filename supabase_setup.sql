@@ -36,6 +36,10 @@ CREATE TABLE public.counselors (
   updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX counselors_auth_user_id_unique
+  ON public.counselors (auth_user_id)
+  WHERE auth_user_id IS NOT NULL;
+
 -- ─── 2. 상담자(내담자) 테이블 (clients) ──────────────────────────────────────
 CREATE TABLE public.clients (
   id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -220,7 +224,13 @@ CREATE POLICY "counselors_insert" ON public.counselors FOR INSERT
   WITH CHECK (is_admin());
 
 CREATE POLICY "counselors_update" ON public.counselors FOR UPDATE
-  USING (is_admin() OR auth_user_id = auth.uid());
+  USING (is_admin() OR (auth_user_id = auth.uid() AND role = 5))
+  WITH CHECK (is_admin() OR (auth_user_id = auth.uid() AND role = 5));
+
+CREATE POLICY "counselors_update_guard" ON public.counselors
+  AS RESTRICTIVE FOR UPDATE TO authenticated
+  USING (is_admin() OR (auth_user_id = auth.uid() AND role = 5))
+  WITH CHECK (is_admin() OR (auth_user_id = auth.uid() AND role = 5));
 
 CREATE POLICY "counselors_delete" ON public.counselors FOR DELETE
   USING (is_admin());
