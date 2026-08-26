@@ -124,8 +124,12 @@ export default function ClientRegister() {
       const day = front.substring(4, 6);
       const genderDigit = form.res_id_back.substring(0, 1);
 
-      let yearPrefix = '19';
-      if (['3', '4'].includes(genderDigit)) yearPrefix = '20';
+      // NOTE(2026-08-26): 뒷자리 첫 숫자(1/2=1900년대, 3/4=2000년대) 대신, 앞자리 2자리
+      // 연도값 자체로 세기를 판단한다 — 00은 2000년생, 01은 2001년생, 10은 2010년생처럼
+      // 현재 연도의 뒤 2자리 이하면 2000년대, 초과면 1900년대로 취급.
+      const currentYearTwoDigit = new Date().getFullYear() % 100;
+      const yearPrefixNum = parseInt(yearPrefixStr, 10);
+      const yearPrefix = yearPrefixNum <= currentYearTwoDigit ? '20' : '19';
 
       const fullYear = parseInt(yearPrefix + yearPrefixStr, 10);
       const birthDateStr = `${fullYear}-${month}-${day}`;
@@ -234,15 +238,32 @@ export default function ClientRegister() {
         desired_area_2: form.desired_area_2 || null,
         desired_area_3: form.desired_area_3 || null,
         desired_payment: form.desired_payment ? parseInt(form.desired_payment, 10) : null,
-        work_ex_desire: form.work_ex_desire ? parseInt(form.work_ex_desire, 10) : null,
-        work_ex_type: form.work_ex_type ? parseInt(form.work_ex_type, 10) : null,
-        work_ex_company: form.work_ex_company || null,
-        work_ex_start: form.work_ex_start || null,
-        work_ex_end: form.work_ex_end || null,
-        work_ex_graduate: form.work_ex_graduate ? parseInt(form.work_ex_graduate, 10) : null,
-        memo: form.notes || null,
         counselor_id: user?.counselorId || null,
-        // clients 스키마의 취업 정보는 단일 필드만 존재하므로 대표값을 저장한다.
+        counsel_notes: form.notes || null,
+        // NOTE(2026-08-26): 주민번호는 원문/암호화 저장할 컬럼이 없고 resident_id_masked(마스킹된
+        // 값)만 존재한다. 생년월일 6자리 + 뒷자리 첫 글자만 남기고 나머지는 마스킹해서 저장.
+        resident_id_masked: form.res_id_front && form.res_id_back
+          ? `${form.res_id_front}-${form.res_id_back.charAt(0)}******`
+          : null,
+        // NOTE(2026-08-26): 일경험 관련 select들은 코드값(1/2/3)으로 관리되는데, work_exp_*
+        // 컬럼은 다른 텍스트 필드들처럼 사람이 읽는 값으로 저장하는 게 일관적이라 라벨로 변환한다.
+        work_exp_intent: { '1': '필요', '2': '미필요', '3': '해당없음' }[form.work_ex_desire] || null,
+        work_exp_type: { '1': '훈련연계형', '2': '체험형', '3': '인턴형' }[form.work_ex_type] || null,
+        work_exp_company: form.work_ex_company || null,
+        work_exp_period: form.work_ex_start && form.work_ex_end
+          ? `${form.work_ex_start} ~ ${form.work_ex_end}`
+          : null,
+        work_exp_completed: { '1': '수료', '0': '미수료' }[form.work_ex_graduate] || null,
+        // NOTE(2026-08-26): clients 스키마에는 희망직무가 단일 필드(desired_job)뿐이라
+        // 1~3순위를 콤마로 이어붙여 하나의 컬럼에 저장한다 (취업 정보 세부 항목도 마찬가지로
+        // hire_* 세부는 저장할 곳이 없어 대표값만 저장).
+        desired_job: [form.desired_job_1, form.desired_job_2, form.desired_job_3]
+          .map(v => v?.trim())
+          .filter((v): v is string => Boolean(v))
+          .join(', ') || null,
+        // address_1/address_2(옛 필드명)도 하나로 합쳐서 저장, capa는 competency_grade로 저장.
+        address: [form.address_1, form.address_2].map(v => v?.trim()).filter(Boolean).join(' ') || null,
+        competency_grade: form.capa || null,
         employer: form.hire_place || null,
         job_title: form.hire_job_type || null,
         employment_type: form.hire_type || null,

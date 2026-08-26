@@ -342,13 +342,38 @@ export async function fetchClientById(id: string): Promise<ClientRow | null> {
   return liveClientToRow((data as any) as unknown as LiveClientRecord);
 }
 
+/**
+ * seq_no는 DB 전체 기준 최댓값 + 1로 채운다. 동시에 두 명이 등록하면 같은 값이 나올 수 있는
+ * 경합 가능성이 이론상 있지만(별도 시퀀스/락 없음), 상담사 소수가 쓰는 내부 도구라 감수한다.
+ */
+async function getNextSeqNo(): Promise<number> {
+  const { data, error } = await runQuery<Array<{ seq_no: number | null }>>(
+    '다음 순번 조회',
+    sb().from('clients').select('seq_no').order('seq_no', { ascending: false, nullsFirst: false }).limit(1),
+  );
+  if (error) throw error;
+  const maxSeqNo = data?.[0]?.seq_no ?? 0;
+  return maxSeqNo + 1;
+}
+
 export async function createClient(input: any): Promise<ClientRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const counselorRowId = normalizeCounselorRowId(input.counselor_id);
+
+  // input.counselor_id는 로그인 계정의 auth uid로 넘어오므로, FK가 요구하는
+  // counselors.id로 변환해야 한다 (안 그러면 FK 위반으로 INSERT가 실패한다).
+  const [resolvedCounselorRowId, nextSeqNo] = await Promise.all([
+    input.counselor_id ? resolveCounselorRowId(input.counselor_id) : Promise.resolve(null),
+    getNextSeqNo(),
+  ]);
+  if (input.counselor_id && !resolvedCounselorRowId) {
+    throw new Error('로그인한 상담사 계정이 counselors 테이블과 연결되어 있지 않습니다. 관리자에게 문의하세요.');
+  }
 
   const payload = {
     name: input.name,
-    counselor_id: counselorRowId,
+    counselor_id: resolvedCounselorRowId,
+    seq_no: nextSeqNo,
+    year: new Date().getFullYear(),
     age: input.age,
     gender: normalizeGender(input.gender),
     phone: input.phone,
@@ -360,8 +385,15 @@ export async function createClient(input: any): Promise<ClientRow> {
     business_type: input.business_type,
     participation_type: input.participation_type,
     participation_stage: input.participation_stage,
+    competency_grade: input.competency_grade,
     counsel_notes: input.counsel_notes,
     branch: input.branch,
+    resident_id_masked: input.resident_id_masked,
+    work_exp_type: input.work_exp_type,
+    work_exp_intent: input.work_exp_intent,
+    work_exp_company: input.work_exp_company,
+    work_exp_period: input.work_exp_period,
+    work_exp_completed: input.work_exp_completed,
     employer: input.employer,
     job_title: input.job_title,
     employment_type: input.employment_type,
