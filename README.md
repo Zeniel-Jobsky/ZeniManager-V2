@@ -16,7 +16,7 @@
 
 ## 목차
 
-- [프로젝트 개요](#프로젝트-개요)
+- [프로젝트 개요](#프로젝트-개요)a
 - [주요 기능](#주요-기능)
 - [AI 처리 흐름](#ai-처리-흐름)
 - [팀원별 역할](#팀원별-역할)
@@ -29,6 +29,7 @@
 - [릴리스 방법](#릴리스-방법)
 - [프로젝트 구조](#프로젝트-구조)
 - [보안 정책](#보안-정책)
+- [추후 개발 필요사항](#추후-개발-필요사항)
 - [라이선스](#라이선스)
 
 ---
@@ -65,9 +66,11 @@ ZeniManager는 상담사가 남기는 비정형 상담 기록과 업로드 문�
 ## 주요 기능
 
 ### 상담사 포털
-- **업무 대시보드**: 전체 상담자 수, 진행 현황, 완료/후속 상담, 평균 점수, 캘린더, 메모장
-- **상담자 목록**: 검색, 필터, 상세 모달, 상담 관리, 상담 이력, 상담 입력, 단계별 진행 관리
+- **업무 대시보드**: 전체 상담자 수, 진행 현황, 완료/후속 상담, 평균 점수, 캘린더(예약/일정 관리), 메모장
+- **상담자 목록**: 검색, 필터(전체/진행 중/취업 완료/후속 상담/점수 미확정), 상세 화면 연결, 단계별 진행 관리
 - **AI 상담 지원**: 문서 요약, 핵심 강점 추출, 유사 취업 사례 검색, 추천 직무/산업 분석
+- **채용공고 추천**: 내담자 희망직종 기준으로 잡코리아·사람인·인크루트 공개 채용공고를 조건(학력/경력/지역)에 맞춰 추천 ([구현 문서](./docs/jhw/채용공고-추천-기능-구현문서.md))
+- **국취제 매뉴얼 도우미**: 국민취업지원제도 업무매뉴얼 PDF를 검색 근거로 삼는 RAG 챗봇 — 근거 페이지·신뢰도·매칭 키워드를 함께 표시 ([기능 문서](./docs/8.24~8.29/manual-rag-chatbot.md))
 - **상담자 등록**: 신규 상담자 정보 입력 폼
 - **구직준비도 설문 관리**: 8문항 설문 입력·조회·수정, 총점 자동 계산
 - **상담 챗봇**: 상담 질문 기반으로 관련 프로필과 유사 사례를 함께 참고하는 대화형 지원
@@ -114,11 +117,10 @@ PPT의 역할 분담을 README 기준으로 정리했습니다.
 
 | 이름 | 역할 | 담당 범위 |
 |------|------|-----------|
-| 고준수 | Project Leader / Planning | 로그인, API 주소 및 키 등록 설정 총괄, 기술 스택 및 개발 방향성 선정, 상담자 입력 프론트 |
-| 구건모 | Frontend Dev | UI/UX 프론트 뷰, 상담자 목록, 업무 대시보드, 캘린더, 상담 메모 기능 |
-| 문상희 | Backend Dev | Supabase API 및 쿼리 세팅, 상담 디테일 페이지(관리 / 이력 / 프로세스 기록) |
-| 류시은 | Admin Dev | 관리자 페이지 구축, 통계 및 DB 관리 대시보드, 전사적 모니터링, Excel 입력/출력 |
-| 양재식 | AI Function Dev | AI 상담 / 요약 페이지(JSON API), 자격증 정보 API 결합, 점수화 모델 및 GPT 프롬프트 설계, HWP / Excel 데이터 정형화 |
+| 김욱현 | Project Leader / Backend | 실제 데이터 연결, 기능 구현(기능테스트.md 참조), 대시보드 기능 변경 |
+| 정현욱 | Full Stack | 국민취업제도 지침서 데이터화, RAG 기반 AI 챗봇 기능 구현  |
+| 안지오 | Full Stack | 채용공고 추천 서비스 기능 구현 |
+
 
 ---
 
@@ -211,12 +213,13 @@ PPT의 역할 분담을 README 기준으로 정리했습니다.
 ├── 업무 대시보드
 │   ├── 통계 카드 (전체 상담자 수, 프로세스 현황)
 │   ├── 월별 상담 차트
-│   ├── 캘린더
+│   ├── 캘린더 (상담 예약/일정 관리)
 │   └── 칸반 메모장
+├── 국취제 매뉴얼 도우미 (RAG 챗봇)
 ├── 상담자 목록
-│   ├── 검색 (전체 / 점수미확정 / 후속상담 / 취업처리)
+│   ├── 필터 (전체 / 진행 중 / 취업 완료 / 후속 상담 / 점수 미확정)
 │   ├── 상담자 테이블
-│   └── 상세 모달 (상담관리 · 상담이력 · 상담내용 입력 · 구직준비도 설문 · 요약 및 분석 · 챗봇)
+│   └── 상세 화면 (대시보드 · 상담이력 · 구직준비도 · 요약 및 분석 · 채용공고 추천 · 챗봇)
 └── 상담자 등록
 
 관리자 (고정 사이드바)
@@ -242,8 +245,8 @@ PPT의 역할 분담을 README 기준으로 정리했습니다.
 
 ```bash
 # 1. 저장소 클론
-git clone https://github.com/SuranS2/ZeniManager.git
-cd ZeniManager
+git clone https://github.com/Zeniel-Jobsky/ZeniManager-V2.git
+cd ZeniManager-V2
 
 # 2-A. Corepack 사용 시 (최초 1회)
 corepack enable
@@ -313,7 +316,7 @@ Supabase 대시보드 → **Authentication** → **Users** → **Add user** 에�
 자세한 내용은 [ELECTRON_BUILD.md](./ELECTRON_BUILD.md)를 참고하세요.
 
 ```bash
-# Windows portable exe
+# Windows NSIS 설치 파일 (Setup.exe)
 pnpm electron:build:win
 
 # macOS DMG
@@ -323,7 +326,7 @@ pnpm electron:build:mac
 pnpm electron:build:linux
 ```
 
-`pnpm electron:build:win`은 Windows portable exe를 생성합니다.
+`pnpm electron:build:win`은 Windows NSIS 설치 파일(`Setup.exe`)을 생성합니다.
 
 빌드 결과물은 `release/{version}/` 디렉토리에 생성됩니다.
 
@@ -333,18 +336,18 @@ pnpm electron:build:linux
 
 ## 릴리스 방법
 
-현재 Windows 배포는 `portable` 전용 정책을 사용합니다.
+현재 Windows 배포는 `nsis` 설치형(Setup.exe) 전용 정책을 사용합니다 (`electron-builder.yml`의 `win.target: nsis`).
 
 1. `main` 브랜치로 PR을 머지합니다.
 2. GitHub Actions가 최신 태그를 기준으로 다음 patch 버전을 자동 계산합니다.
-3. Windows portable 빌드를 실행합니다.
+3. Windows NSIS 설치 파일 빌드를 실행합니다.
    ```bash
    pnpm electron:build:win
    ```
-4. `release/{version}/` 아래에 생성된 portable exe를 확인합니다.
+4. `release/{version}/` 아래에 생성된 `Setup {version}.exe`를 확인합니다.
 5. 워크플로우가 자동으로 `v{version}` 태그를 만들고 GitHub Release를 생성합니다.
 
-설치형 `Setup.exe`는 현재 릴리스 정책에서 제외되어 있습니다.
+Portable exe는 현재 릴리스 정책에서 제외되어 있습니다 (필요하면 `electron-builder.yml`의 `win.target`에 `portable`을 추가해 함께 빌드할 수 있습니다).
 
 ---
 
@@ -357,9 +360,14 @@ ZeniManager/
 │       ├── components/        # 공통 UI 컴포넌트
 │       ├── contexts/          # React Context (Auth 등)
 │       ├── hooks/             # 커스텀 훅 (useElectron 등)
-│       ├── lib/               # Supabase 클라이언트, API 레이어, 목업 데이터
+│       ├── lib/               # Supabase 클라이언트, API 레이어
+│       │   ├── api.appointments.ts     # 예약/일정 CRUD
+│       │   ├── jobRecommendations.ts   # 채용공고 추천 API 호출·캐시
+│       │   ├── jobRegions.ts           # 시·도/시·군·구 표준 지역 데이터
+│       │   └── manualRag.ts            # 매뉴얼 도우미(RAG) API 호출
 │       └── pages/
-│           ├── counselor/     # 상담사 페이지 (Dashboard, ClientList, ClientRegister)
+│           ├── counselor/     # 상담사 페이지 (Dashboard, ClientList, ClientRegister,
+│           │                  #   ManualRagChat, JobRecommendationsTab 등)
 │           ├── admin/         # 관리자 페이지 (AdminDashboard, CounselorList, AdminClientList)
 │           ├── Login.tsx
 │           └── Settings.tsx
@@ -368,10 +376,20 @@ ZeniManager/
 │   ├── preload.cjs            # contextBridge IPC 브릿지
 │   ├── entitlements.mac.plist # macOS 권한 설정
 │   └── icons/                 # 앱 아이콘 (빌드 전 추가 필요)
-├── supabase_setup.sql         # Supabase 스키마 + RLS 정책
-├── electron-builder.yml       # Electron 빌드 설정
-├── vite.electron.config.ts    # Electron 전용 Vite 설정
-└── ELECTRON_BUILD.md          # Electron 빌드 가이드
+├── supabase/
+│   ├── functions/             # Supabase Edge Functions
+│   │   ├── recommend-job-postings/   # 채용공고 추천 (잡코리아·사람인·인크루트)
+│   │   ├── manual-chat/              # 국취제 매뉴얼 도우미 RAG 챗봇
+│   │   ├── sync-employment-success-case/
+│   │   ├── search-employment-success-case/
+│   │   └── _shared/            # Edge Function 간 공용 로직
+│   └── sql/                    # 기능별 RLS/스키마 SQL (appointments, client_chat_history 등)
+├── manual-rag/                 # 매뉴얼 PDF 적재 스크립트 + RAG 검색 SQL
+├── docs/                       # 작업 로그, 기능 구현/사용 문서
+├── supabase_setup.sql          # Supabase 기본 스키마 + RLS 정책
+├── electron-builder.yml        # Electron 빌드 설정
+├── vite.electron.config.ts     # Electron 전용 Vite 설정
+└── ELECTRON_BUILD.md           # Electron 빌드 가이드
 ```
 
 ---
@@ -390,6 +408,15 @@ ZeniManager/
 
 ---
 
+## 추후 개발 필요사항
+
+작업 로그([`docs/8.24~8.29/`](./docs/8.24~8.29/))와 기능 구현 문서([`docs/jhw/`](./docs/jhw/))를 기준으로 정리한 남은 과제입니다.
+
+- **관리자페이지 개발 필요**: 관리자 고객 목록의 엑셀/CSV 가져오기(임포트)가 옛 스키마 필드명을 참조해 값이 조용히 누락되는 문제, 사업 대시보드의 "프로세스 단계별 인원" 차트가 실제 참여단계 값(30여 종) 중 5개 고정 버킷만 집계하는 문제가 남아 있습니다. 자세한 내용은 [`기능테스트.md`](./docs/8.24~8.29/기능테스트.md)를 참고하세요.
+- **다른 환경에서의 Supabase 연결 재확인**: Supabase 연결 정보는 `localStorage`에만 저장되어 Git으로 공유되지 않으므로, 새 PC/환경에서 처음 실행할 때는 반드시 설정 화면에서 프로젝트 URL·Anon Key를 다시 입력해야 합니다.
+
+---
+
 ## 스크립트 요약
 
 | 스크립트 | 설명 |
@@ -398,7 +425,7 @@ ZeniManager/
 | `pnpm build` | 웹 프로덕션 빌드 |
 | `pnpm electron:ensure` | Electron 바이너리 수동 복구 |
 | `pnpm electron:dev` | Electron 개발 모드 |
-| `pnpm electron:build:win` | Windows portable exe 빌드 |
+| `pnpm electron:build:win` | Windows NSIS 설치 파일(Setup.exe) 빌드 |
 | `pnpm electron:build:mac` | macOS DMG 빌드 |
 | `pnpm electron:build:linux` | Linux AppImage 빌드 |
 | `pnpm test` | 단위 테스트 실행 |

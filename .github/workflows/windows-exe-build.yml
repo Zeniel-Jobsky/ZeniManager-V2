@@ -1,4 +1,4 @@
-name: Build Windows Portable Release
+name: Build Windows NSIS Release
 
 on:
   push:
