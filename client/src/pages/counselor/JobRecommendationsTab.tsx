@@ -17,10 +17,13 @@ import type { ClientRow } from '@/lib/supabase';
 import {
   fetchJobRecommendations,
   JOB_SOURCES,
+  type JobRecommendationFilters,
   type JobPostingRecommendation,
   type JobRecommendationResponse,
   type JobSource,
+  type JobSourceDiagnostic,
 } from '@/lib/jobRecommendations';
+import { describeJobRecommendationFilters, JobRecommendationSearchControls } from './JobRecommendationSearchControls';
 
 const PRIMARY = '#009C64';
 
@@ -38,43 +41,67 @@ export function JobRecommendationsTab({ client }: { client: ClientRow }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [submittedFilters, setSubmittedFilters] = useState<JobRecommendationFilters | null>(null);
   const requestVersion = useRef(0);
   const displayedDesiredJob = response?.desiredJob || desiredJob;
 
-  const loadRecommendations = useCallback(async (force = false) => {
-    if (!desiredJob) return;
-    const version = ++requestVersion.current;
-    setLoading(true);
-    setError(null);
+  const loadRecommendations = useCallback(
+    async (filters: JobRecommendationFilters, force = false) => {
+      if (!desiredJob) return;
+      const version = ++requestVersion.current;
+      setLoading(true);
+      setError(null);
 
-    try {
-      const next = await fetchJobRecommendations(client.id, {
-        expectedDesiredJob: desiredJob,
-        force,
-      });
-      if (requestVersion.current === version) {
-        setResponse(next);
-        setSourceFilter('all');
+      try {
+        const next = await fetchJobRecommendations(client.id, {
+          expectedDesiredJob: desiredJob,
+          filters,
+          force,
+        });
+        if (requestVersion.current === version) {
+          setResponse(next);
+          setSourceFilter('all');
+        }
+      } catch (loadError) {
+        if (requestVersion.current === version) {
+          setError(loadError instanceof Error ? loadError.message : '채용공고 추천 조회에 실패했습니다.');
+        }
+      } finally {
+        if (requestVersion.current === version) setLoading(false);
       }
-    } catch (loadError) {
-      if (requestVersion.current === version) {
-        setError(loadError instanceof Error ? loadError.message : '채용공고 추천 조회에 실패했습니다.');
-      }
-    } finally {
-      if (requestVersion.current === version) setLoading(false);
-    }
-  }, [client.id, desiredJob]);
+    },
+    [client.id, desiredJob],
+  );
 
   useEffect(() => {
+    requestVersion.current += 1;
     setResponse(null);
     setError(null);
     setSourceFilter('all');
-    if (desiredJob) void loadRecommendations(false);
+    setSubmittedFilters(null);
+    setLoading(false);
 
     return () => {
       requestVersion.current += 1;
     };
-  }, [client.id, desiredJob, loadRecommendations]);
+  }, [client.id, desiredJob]);
+
+  const handleDraftChange = useCallback(() => {
+    requestVersion.current += 1;
+    setResponse(null);
+    setError(null);
+    setSourceFilter('all');
+    setSubmittedFilters(null);
+    setLoading(false);
+  }, []);
+
+  const handleSearch = useCallback(
+    (filters: JobRecommendationFilters) => {
+      setSubmittedFilters(filters);
+      void loadRecommendations(filters, false);
+    },
+    [loadRecommendations],
+  );
 
   const filteredResults = useMemo(() => {
     const results = response?.results ?? [];
@@ -101,35 +128,40 @@ export function JobRecommendationsTab({ client }: { client: ClientRow }) {
   return (
     <section className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
       <header className="rounded-xl border border-border bg-muted/10 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <BriefcaseBusiness size={18} style={{ color: PRIMARY }} />
-              채용공고 추천
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Supabase에 저장된 희망직종을 기준으로 3개 채용사이트의 공개 공고를 검색합니다.
-              중복 공고와 이미 마감된 공고는 결과에서 제외됩니다.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">희망직종</span>
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                {displayedDesiredJob}
-              </span>
-            </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+            <BriefcaseBusiness size={18} style={{ color: PRIMARY }} />
+            채용공고 추천
           </div>
-          <button
-            type="button"
-            onClick={() => void loadRecommendations(true)}
-            disabled={loading}
-            className="inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ backgroundColor: PRIMARY }}
-          >
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            {loading ? '검색 중...' : response ? '새로고침' : '공고 검색'}
-          </button>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Supabase에 저장된 희망직종을 기준으로 3개 채용사이트의 공개 공고를 검색합니다. 중복 공고와 이미 마감된
+            공고는 결과에서 제외됩니다.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">희망직종</span>
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              {displayedDesiredJob}
+            </span>
+          </div>
         </div>
       </header>
+
+      <JobRecommendationSearchControls
+        key={`${client.id}:${desiredJob}`}
+        loading={loading}
+        onDraftChange={handleDraftChange}
+        onSearch={handleSearch}
+      />
+
+      {!response && !loading && !error && (
+        <div className="rounded-xl border border-dashed border-border bg-muted/10 px-6 py-10 text-center">
+          <Search size={25} className="mx-auto text-muted-foreground/50" />
+          <h3 className="mt-3 text-sm font-semibold text-foreground">검색 조건을 선택해주세요</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            학력, 신입·경력, 지역을 선택한 뒤 검색 버튼을 누르면 추천 채용공고가 표시됩니다.
+          </p>
+        </div>
+      )}
 
       {loading && !response && <JobRecommendationSkeleton />}
 
@@ -143,7 +175,8 @@ export function JobRecommendationsTab({ client }: { client: ClientRow }) {
             </div>
             <button
               type="button"
-              onClick={() => void loadRecommendations(true)}
+              onClick={() => submittedFilters && void loadRecommendations(submittedFilters, true)}
+              disabled={!submittedFilters || loading}
               className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700"
             >
               다시 시도
@@ -154,14 +187,41 @@ export function JobRecommendationsTab({ client }: { client: ClientRow }) {
 
       {response && (
         <>
+          {submittedFilters && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">적용 조건</span>
+              {describeJobRecommendationFilters(submittedFilters).map((label, index) => (
+                <span key={`${label}-${index}`} className="rounded-full border border-border bg-background px-2.5 py-1">
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {submittedFilters && !submittedFilters.education.includes('any') && (
+            <div
+              role="note"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            >
+              잡코리아 검색 결과에는 학력 정보가 없는 공고가 있어, 선택한 학력 조건을 확인할 수 없는 공고는 제외될 수
+              있습니다.
+            </div>
+          )}
+
           {response.partial && (
-            <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            >
               일부 사이트의 응답이 없어 조회된 사이트의 공고만 표시합니다.
             </div>
           )}
 
           {error && (
-            <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div
+              role="alert"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            >
               새로고침에 실패해 직전에 조회한 결과를 표시합니다. {error}
             </div>
           )}
@@ -183,14 +243,23 @@ export function JobRecommendationsTab({ client }: { client: ClientRow }) {
                     label={diagnostic?.sourceLabel ?? source}
                     count={diagnostic?.returned ?? 0}
                     failed={diagnostic?.status === 'error'}
-                    title={diagnostic?.message}
+                    title={formatSourceDiagnosticTitle(diagnostic)}
                     onClick={() => setSourceFilter(source)}
                   />
                 );
               })}
             </div>
-            <div className="text-xs text-muted-foreground">
-              {formatFetchedAt(response.fetchedAt)} 기준
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-muted-foreground">{formatFetchedAt(response.fetchedAt)} 기준</div>
+              <button
+                type="button"
+                onClick={() => submittedFilters && void loadRecommendations(submittedFilters, true)}
+                disabled={!submittedFilters || loading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                {loading ? '검색 중...' : '새로고침'}
+              </button>
             </div>
           </div>
 
@@ -347,4 +416,20 @@ function formatFetchedAt(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function formatSourceDiagnosticTitle(diagnostic: JobSourceDiagnostic | undefined): string | undefined {
+  if (!diagnostic) return undefined;
+  const details: string[] = [];
+  if (diagnostic.message) details.push(diagnostic.message);
+  if (diagnostic.excludedByFilter != null && diagnostic.excludedByFilter > 0) {
+    details.push(`검색 조건 제외 ${diagnostic.excludedByFilter}건`);
+  }
+  if (diagnostic.excludedExpired > 0) {
+    details.push(`마감 제외 ${diagnostic.excludedExpired}건`);
+  }
+  if (diagnostic.excludedDuplicate > 0) {
+    details.push(`중복 제외 ${diagnostic.excludedDuplicate}건`);
+  }
+  return details.length > 0 ? details.join(' · ') : undefined;
 }

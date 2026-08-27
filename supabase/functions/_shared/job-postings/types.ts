@@ -1,13 +1,13 @@
-export const JOB_SOURCES = ['jobkorea', 'saramin', 'incruit'] as const;
+export const JOB_SOURCES = ["jobkorea", "saramin", "incruit"] as const;
 
 export type JobSource = (typeof JOB_SOURCES)[number];
 
-export type JobDeadlineKind = 'date' | 'always' | 'until-hired';
+export type JobDeadlineKind = "date" | "always" | "until-hired";
 
 export const JOB_SOURCE_LABELS: Record<JobSource, string> = {
-  jobkorea: '잡코리아',
-  saramin: '사람인',
-  incruit: '인크루트',
+  jobkorea: "잡코리아",
+  saramin: "사람인",
+  incruit: "인크루트",
 };
 
 export interface RawJobPosting {
@@ -54,10 +54,11 @@ export interface JobPostingRecommendation {
 export interface JobSourceDiagnostic {
   source: JobSource;
   sourceLabel: string;
-  status: 'success' | 'error';
+  status: "success" | "error";
   fetched: number;
   returned: number;
   excludedExpired: number;
+  excludedByFilter: number;
   excludedDuplicate: number;
   message?: string;
 }
@@ -67,5 +68,9 @@ export interface JobRecommendationResponse {
   results: JobPostingRecommendation[];
   fetchedAt: string;
   partial: boolean;
+  /** Allows clients to reject a stale deployment which silently ignores filters. */
+  filterContractVersion: 1;
+  /** Deterministic serialization of the canonical filters applied by the server. */
+  appliedFilterKey: string;
   sources: JobSourceDiagnostic[];
 }

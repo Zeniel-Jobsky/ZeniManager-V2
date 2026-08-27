@@ -10,16 +10,37 @@ vi.mock('./supabase', () => ({
   isSupabaseConfigured: () => mocks.configured,
   getSupabaseUrl: () => 'https://project.supabase.co',
   getSupabaseClient: () => ({
-    auth: { getSession: async () => ({ data: { session: { user: { id: mocks.userId } } } }) },
+    auth: {
+      getSession: async () => ({
+        data: { session: { user: { id: mocks.userId } } },
+      }),
+    },
     functions: { invoke: mocks.invoke },
   }),
 }));
 
 import {
   clearJobRecommendationCache,
+  DEFAULT_JOB_RECOMMENDATION_FILTERS,
   fetchJobRecommendations,
   isAllowedJobPostingUrl,
+  JOB_RECOMMENDATION_FILTER_CONTRACT_VERSION,
+  normalizeJobRecommendationFilters,
+  serializeJobRecommendationFiltersForContract,
+  type JobRecommendationFilters,
 } from './jobRecommendations';
+
+const FILTERS: JobRecommendationFilters = {
+  education: ['associate', 'bachelor'],
+  experience: {
+    types: ['entry', 'experienced'],
+    range: { kind: 'minimum-years', years: 3 },
+  },
+  regions: [
+    { code: 'seoul/gangnam-gu', label: '서울특별시 강남구' },
+    { code: 'gyeonggi/suwon-si', label: '경기도 수원시' },
+  ],
+};
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -35,48 +56,93 @@ afterEach(() => {
 });
 
 describe('fetchJobRecommendations', () => {
-  it('calls the authenticated Edge Function with only the client UUID', async () => {
+  it('sends the selected filters in the nested Edge Function body contract', async () => {
     mocks.invoke.mockResolvedValue({
-      data: responseFixture(),
+      data: responseFixture(FILTERS),
       error: null,
     });
 
     await fetchJobRecommendations('329f321e-735b-4ed1-9b51-24f397abbb95', {
       expectedDesiredJob: '백엔드 개발자',
+      filters: FILTERS,
     });
 
     expect(mocks.invoke).toHaveBeenCalledWith('recommend-job-postings', {
-      body: { clientId: '329f321e-735b-4ed1-9b51-24f397abbb95' },
+      body: {
+        clientId: '329f321e-735b-4ed1-9b51-24f397abbb95',
+        filters: {
+          education: ['associate', 'bachelor'],
+          experience: {
+            types: ['entry', 'experienced'],
+            range: { kind: 'minimum-years', years: 3 },
+          },
+          regions: [
+            { code: 'gyeonggi/suwon-si', label: '경기도 수원시' },
+            { code: 'seoul/gangnam-gu', label: '서울특별시 강남구' },
+          ],
+        },
+      },
     });
   });
 
   it('uses the short-lived cache for the same client and desired job', async () => {
     mocks.invoke.mockResolvedValue({ data: responseFixture(), error: null });
 
-    await fetchJobRecommendations('client-1', { expectedDesiredJob: '백엔드 개발자' });
-    await fetchJobRecommendations('client-1', { expectedDesiredJob: ' 백엔드   개발자 ' });
+    await fetchJobRecommendations('client-1', {
+      expectedDesiredJob: '백엔드 개발자',
+    });
+    await fetchJobRecommendations('client-1', {
+      expectedDesiredJob: ' 백엔드   개발자 ',
+    });
 
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
 
   it('passes an explicit refresh flag when force bypasses the local cache', async () => {
-    mocks.invoke.mockResolvedValue({ data: responseFixture(), error: null });
+    mocks.invoke.mockResolvedValue({ data: responseFixture(FILTERS), error: null });
 
-    await fetchJobRecommendations('client-1');
-    await fetchJobRecommendations('client-1', { force: true });
+    await fetchJobRecommendations('client-1', { filters: FILTERS });
+    await fetchJobRecommendations('client-1', {
+      filters: FILTERS,
+      force: true,
+    });
 
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
     expect(mocks.invoke).toHaveBeenLastCalledWith('recommend-job-postings', {
-      body: { clientId: 'client-1', refresh: true },
+      body: {
+        clientId: 'client-1',
+        filters: normalizeJobRecommendationFilters(FILTERS),
+        refresh: true,
+      },
     });
+  });
+
+  it('does not share cached recommendations across different applied filters', async () => {
+    mocks.invoke.mockImplementation(
+      async (_name: string, options: { body: { filters: JobRecommendationFilters } }) => ({
+        data: responseFixture(options.body.filters),
+        error: null,
+      }),
+    );
+
+    await fetchJobRecommendations('client-1', {
+      filters: DEFAULT_JOB_RECOMMENDATION_FILTERS,
+    });
+    await fetchJobRecommendations('client-1', { filters: FILTERS });
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
   });
 
   it('does not share cached recommendations across signed-in users', async () => {
     mocks.invoke.mockResolvedValue({ data: responseFixture(), error: null });
 
-    await fetchJobRecommendations('client-1', { expectedDesiredJob: '백엔드 개발자' });
+    await fetchJobRecommendations('client-1', {
+      expectedDesiredJob: '백엔드 개발자',
+    });
     mocks.userId = 'counselor-2';
-    await fetchJobRecommendations('client-1', { expectedDesiredJob: '백엔드 개발자' });
+    await fetchJobRecommendations('client-1', {
+      expectedDesiredJob: '백엔드 개발자',
+    });
 
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
   });
@@ -120,45 +186,161 @@ describe('fetchJobRecommendations', () => {
     expect(response.results).toHaveLength(1);
     expect(isAllowedJobPostingUrl('jobkorea', 'https://evil.example/jobs/1')).toBe(false);
   });
+
+  it('parses the optional count of postings excluded by search filters', async () => {
+    const fixture = responseFixture();
+    Object.assign(fixture.sources[0], { excludedByFilter: 7 });
+    mocks.invoke.mockResolvedValue({ data: fixture, error: null });
+
+    const response = await fetchJobRecommendations('client-3');
+
+    expect(response.sources[0].excludedByFilter).toBe(7);
+  });
+
+  it('remains compatible with an older response without excludedByFilter', async () => {
+    mocks.invoke.mockResolvedValue({ data: responseFixture(), error: null });
+
+    const response = await fetchJobRecommendations('client-4');
+
+    expect(response.sources[0]).not.toHaveProperty('excludedByFilter');
+  });
+
+  it('fails closed when the deployed function does not report the filter contract', async () => {
+    const fixture = responseFixture() as Record<string, unknown>;
+    delete fixture.filterContractVersion;
+    delete fixture.appliedFilterKey;
+    mocks.invoke.mockResolvedValue({ data: fixture, error: null });
+
+    await expect(fetchJobRecommendations('client-old-edge')).rejects.toThrow(
+      'recommend-job-postings Edge Function을 다시 배포해주세요',
+    );
+  });
+
+  it('fails closed when the server applied different filters', async () => {
+    mocks.invoke.mockResolvedValue({ data: responseFixture(FILTERS), error: null });
+
+    await expect(fetchJobRecommendations('client-filter-mismatch')).rejects.toThrow(
+      'recommend-job-postings Edge Function을 다시 배포해주세요',
+    );
+  });
 });
 
-function responseFixture() {
+describe('normalizeJobRecommendationFilters', () => {
+  it('makes each unrestricted selection exclusive and removes an inactive range', () => {
+    expect(
+      normalizeJobRecommendationFilters({
+        education: ['bachelor', 'any'],
+        experience: {
+          types: ['experienced', 'any'],
+          range: { kind: 'minimum-years', years: 5 },
+        },
+        regions: [
+          { code: 'seoul', label: '서울특별시' },
+          { code: 'any', label: '지역 무관' },
+        ],
+      }),
+    ).toEqual(DEFAULT_JOB_RECOMMENDATION_FILTERS);
+  });
+
+  it('normalizes ordering, duplicates, ranges, and the ten-region limit', () => {
+    const filters = normalizeJobRecommendationFilters({
+      education: ['bachelor', 'associate', 'bachelor'],
+      experience: {
+        types: ['experienced', 'entry', 'experienced'],
+        range: { kind: 'minimum-years', years: 120.8 },
+      },
+      regions: Array.from({ length: 12 }, (_, index) => ({
+        code: `seoul/district-${String(index).padStart(2, '0')}`,
+        label: `서울특별시 시험구 ${index}`,
+      })),
+    });
+
+    expect(filters.education).toEqual(['associate', 'bachelor']);
+    expect(filters.experience).toEqual({
+      types: ['entry', 'experienced'],
+      range: { kind: 'minimum-years', years: 99 },
+    });
+    expect(filters.regions).toHaveLength(10);
+    expect(filters.regions[0].code).toBe('seoul/district-00');
+    expect(filters.regions[9].code).toBe('seoul/district-09');
+  });
+
+  it('drops an experience range unless experienced is selected', () => {
+    const filters = normalizeJobRecommendationFilters({
+      education: ['any'],
+      experience: {
+        types: ['entry'],
+        range: { kind: 'up-to-one-year' },
+      },
+      regions: [{ code: 'any', label: '지역 무관' }],
+    });
+
+    expect(filters.experience).toEqual({ types: ['entry'], range: null });
+  });
+
+  it('serializes the same canonical contract used by the Edge Function', () => {
+    const key = serializeJobRecommendationFiltersForContract({
+      education: ['any'],
+      experience: { types: ['experienced'], range: { kind: 'minimum-years', years: 4 } },
+      regions: [
+        { code: 'seoul/gangnam-gu', label: '서울특별시 강남구' },
+        { code: 'seoul', label: '서울특별시' },
+      ],
+    });
+
+    expect(JSON.parse(key)).toEqual({
+      education: [],
+      experience: { types: ['experienced'], range: { kind: 'minimum-years', years: 4 } },
+      regions: [{ code: 'seoul', label: '서울특별시' }],
+    });
+  });
+});
+
+function responseFixture(filters: JobRecommendationFilters = DEFAULT_JOB_RECOMMENDATION_FILTERS) {
   return {
+    filterContractVersion: JOB_RECOMMENDATION_FILTER_CONTRACT_VERSION,
+    appliedFilterKey: serializeJobRecommendationFiltersForContract(filters),
     desiredJob: '백엔드 개발자',
     fetchedAt: '2026-08-25T03:00:00.000Z',
     partial: false,
-    results: [{
-      id: 'jobkorea:1',
-      source: 'jobkorea',
-      sourceLabel: '잡코리아',
-      sourceId: '1',
-      url: 'https://www.jobkorea.co.kr/Recruit/GI_Read/1',
-      title: '백엔드 개발자',
-      company: '제니엘',
-      location: '서울',
-      employmentType: '정규직',
-      experience: '경력무관',
-      education: '학력무관',
-      postedAt: '2026-08-24',
-      deadline: '2026-09-10',
-      deadlineAt: '2026-09-10T15:00:00.000Z',
-      deadlineLabel: 'D-16',
-      deadlineKind: 'date',
-      matchedDesiredJob: '백엔드 개발자',
-      links: [{
+    results: [
+      {
+        id: 'jobkorea:1',
         source: 'jobkorea',
         sourceLabel: '잡코리아',
+        sourceId: '1',
         url: 'https://www.jobkorea.co.kr/Recruit/GI_Read/1',
-      }],
-    }],
-    sources: [{
-      source: 'jobkorea',
-      sourceLabel: '잡코리아',
-      status: 'success',
-      fetched: 1,
-      returned: 1,
-      excludedExpired: 0,
-      excludedDuplicate: 0,
-    }],
+        title: '백엔드 개발자',
+        company: '제니엘',
+        location: '서울',
+        employmentType: '정규직',
+        experience: '경력무관',
+        education: '학력무관',
+        postedAt: '2026-08-24',
+        deadline: '2026-09-10',
+        deadlineAt: '2026-09-10T15:00:00.000Z',
+        deadlineLabel: 'D-16',
+        deadlineKind: 'date',
+        matchedDesiredJob: '백엔드 개발자',
+        links: [
+          {
+            source: 'jobkorea',
+            sourceLabel: '잡코리아',
+            url: 'https://www.jobkorea.co.kr/Recruit/GI_Read/1',
+          },
+        ],
+      },
+    ],
+    sources: [
+      {
+        source: 'jobkorea',
+        sourceLabel: '잡코리아',
+        status: 'success',
+        fetched: 1,
+        returned: 1,
+        excludedExpired: 0,
+        excludedDuplicate: 0,
+      },
+    ],
   };
 }
