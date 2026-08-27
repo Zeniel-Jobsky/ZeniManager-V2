@@ -16,8 +16,7 @@ import {
   fetchClientById, 
   updateClient, 
   fetchBusinessCodes,
-  fetchSessions, 
-  createSession,
+  fetchSessions,
   deleteSession,
   fetchSurveys, 
   createSurvey,
@@ -41,7 +40,7 @@ import './ClientDetail.css';
 
 const PRIMARY = '#009C64';
 
-type ClientTab = 'manage' | 'history' | 'input' | 'survey' | 'summary' | 'jobs' | 'chat';
+type ClientTab = 'manage' | 'history' | 'survey' | 'summary' | 'jobs' | 'chat';
 
 const SUCCESS_CASE_SYNC_FIELDS = new Set([
   'employment_date',
@@ -289,15 +288,6 @@ export default function ClientDetail() {
   const [editingAllowanceId, setEditingAllowanceId] = useState<number | null>(null);
   const [editAllowanceMemoValue, setEditAllowanceMemoValue] = useState('');
 
-  // NOTE(2026-08-26): public.sessions 스키마에는 회차/시간/프로파일링 필드가 없어
-  // type/date/content/next_action만 저장된다.
-  const [newSession, setNewSession] = useState({
-    type: '초기상담',
-    content: '',
-    next_action: '',
-    date: new Date().toISOString().split('T')[0],
-  });
-
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
@@ -375,8 +365,21 @@ export default function ClientDetail() {
   }, [loadClient, loadBusinessCodes, loadAllowanceLogs]);
 
   useEffect(() => {
-    if (activeTab === 'history' || activeTab === 'input') loadSessions();
+    if (activeTab === 'history') loadSessions();
   }, [activeTab, loadSessions]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab') as ClientTab | null;
+    const validTabs: ClientTab[] = ['manage', 'history', 'survey', 'summary', 'jobs', 'chat'];
+    if (requestedTab && validTabs.includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+    if (params.has('tab') || params.has('date')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   // NOTE(2026-08-26): 자격증 기능은 현재 DB 스키마(public.clients)에서 지원되지 않는다.
   // addCertificate/deleteCertificate는 항상 에러를 던지도록 스텁 처리되어 있음.
@@ -601,34 +604,6 @@ export default function ClientDetail() {
     setIsEditingHistory(false);
   };
 
-  const handleCreateSession = async () => {
-    if (!id || !user) return;
-    setSaving(true);
-    try {
-      await createSession({
-        client_id: id,
-        ...newSession,
-        counselor_name: user?.name || null,
-        counselor_id: user?.counselorId || null,
-      });
-
-      toast.success('저장되었습니다.');
-      setNewSession({
-        type: '초기상담',
-        content: '',
-        next_action: '',
-        date: new Date().toISOString().split('T')[0],
-      });
-      loadSessions();
-      loadClient(); // 내담자 정보(참여 단계) 새로고침
-      setActiveTab('history');
-    } catch (e: any) {
-      toast.error('저장 실패: ' + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDeleteSession = async (sid: string) => {
     if (!confirm('삭제하시겠습니까?')) return;
     try {
@@ -697,7 +672,6 @@ export default function ClientDetail() {
         {[ 
           { id: 'manage', label: '대시보드' },
           { id: 'history', label: '상담이력' },
-          { id: 'input', label: '상담입력' },
           { id: 'survey', label: '구직준비도' },
           { id: 'summary', label: '요약 및 분석' },
           { id: 'jobs', label: '채용공고 추천' },
@@ -1344,46 +1318,6 @@ export default function ClientDetail() {
           </div>
         )}
 
-        {activeTab === 'input' && (
-          <div className="bg-muted/10 p-6 rounded-xl border border-border/50 animate-in fade-in slide-in-from-right-2 duration-300 max-w-4xl mx-auto">
-            <h3 className="text-sm font-bold mb-6 flex items-center gap-2"><Plus size={16} className="text-primary" /> 새로운 상담 기록</h3>
-            
-            <div className="space-y-6">
-              {/* Row 1: Type & Date */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-muted-foreground mb-1.5 block uppercase tracking-wider">상담 유형</label>
-                  <select value={newSession.type} onChange={(e) => setNewSession({ ...newSession, type: e.target.value })} className="w-full h-10 px-3 bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm">
-                    {['초기상담', '심층상담', '취업지원', '취업완료', '사후관리', '기타'].map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-muted-foreground mb-1.5 block uppercase tracking-wider">상담 일자</label>
-                  <input type="date" value={newSession.date} onChange={(e) => setNewSession({ ...newSession, date: e.target.value })} className="w-full h-10 px-3 bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm" />
-                </div>
-              </div>
-
-              {/* Row 2: Content */}
-              <div>
-                <label className="text-[11px] font-bold text-muted-foreground mb-1.5 block uppercase tracking-wider">상담 내용</label>
-                <textarea value={newSession.content} onChange={(e) => setNewSession({ ...newSession, content: e.target.value })} rows={6} className="w-full p-4 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none text-sm" placeholder="상담 내용을 입력하세요..." />
-              </div>
-
-              {/* Row 3: Next Action */}
-              <div>
-                <label className="text-[11px] font-bold text-muted-foreground mb-1.5 block uppercase tracking-wider">다음 조치사항</label>
-                <textarea value={newSession.next_action} onChange={(e) => setNewSession({ ...newSession, next_action: e.target.value })} rows={3} className="w-full p-4 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none text-sm" placeholder="다음 상담 시 확인할 조치사항을 입력하세요..." />
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-8 mt-6 border-t border-border/40">
-              <button onClick={handleCreateSession} disabled={saving} className="bg-primary text-white px-10 py-3 rounded-lg flex items-center gap-2 font-bold hover:bg-primary/90 transition-all shadow-md shadow-primary/20">
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                상담 기록 저장
-              </button>
-            </div>
-          </div>
-        )}
 
         {activeTab === 'survey' && <SurveyTab clientId={id!} />}
         {activeTab === 'summary' && <ClientSummaryAnalysisTab client={client!} />}

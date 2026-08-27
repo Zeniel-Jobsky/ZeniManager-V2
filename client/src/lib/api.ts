@@ -359,7 +359,10 @@ async function getNextSeqNo(): Promise<number> {
 export async function createClient(input: any): Promise<ClientRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
 
-  const [resolvedCounselorRowId, nextSeqNo] = await Promise.all([Promise.resolve(input.counselor_id ?? null), getNextSeqNo()]);
+  // input.counselor_id는 이미 counselors PK (로그인 시점에 해석됨) — normalizeCounselorRowId로
+  // 형식만 검증한다.
+  const resolvedCounselorRowId = normalizeCounselorRowId(input.counselor_id);
+  const nextSeqNo = await getNextSeqNo();
   if (input.counselor_id && !resolvedCounselorRowId) {
     throw new Error('로그인한 상담사 계정이 counselors 테이블과 연결되어 있지 않습니다. 관리자에게 문의하세요.');
   }

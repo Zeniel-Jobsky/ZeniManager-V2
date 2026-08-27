@@ -11,17 +11,23 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   fetchDashboardStats,
   fetchDashboardMonthlyStats,
-  fetchDashboardCalendarEntries,
-  fetchDashboardCalendarMonthCounts,
   fetchMyMemo,
   searchDashboardClients,
   updateMyMemo,
   type DashboardStats,
   type DashboardMonthlyStat,
-  type DashboardCalendarEntry,
 } from '@/lib/api.dashboard';
+import {
+  fetchAppointments,
+  fetchAppointmentMonthCounts,
+  createAppointment,
+  updateAppointment,
+  updateAppointmentStatus,
+  completeAppointmentWithSession,
+  deleteAppointment,
+} from '@/lib/api.appointments';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import type { ClientRow } from '@/lib/supabase';
+import type { ClientRow, AppointmentRow } from '@/lib/supabase';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Area, AreaChart,
@@ -29,6 +35,7 @@ import {
 import {
   Users, TrendingUp, CheckCircle2, Search, X, ChevronLeft, ChevronRight,
   AlertCircle, Calendar as CalendarIcon, StickyNote, Loader2, RefreshCw, BarChart3,
+  Plus, Trash2, CalendarClock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -143,10 +150,12 @@ function buildRange(
     return { start: normalized.start, end: normalized.end, anchor: normalized.end };
   }
 
-  const anchor = selectedDate || todayKey;
-  const anchorDate = parseDateKey(anchor);
-  const start = toDateKey(addDays(anchorDate, -6));
-  return { start, end: anchor, anchor };
+  // 'week': 항상 "오늘" 기준 앞으로 7일(오늘 포함) — 이 패널이 이제 예약(상담 일정, 미래 항목)만
+  // 보여주므로 과거 방향이 아니라 앞으로의 7일이 되어야 의미가 있다. 캘린더에서 다른 날짜를
+  // 선택해둔 상태여도 이 버튼은 그 선택과 무관하게 항상 오늘부터 계산한다.
+  const todayDate = parseDateKey(todayKey);
+  const end = toDateKey(addDays(todayDate, 6));
+  return { start: todayKey, end, anchor: todayKey };
 }
 
 function formatTimeRange(startTime: string | null, endTime: string | null) {
@@ -169,10 +178,14 @@ function getDashboardSectionFromPath(path: string): 'search' | 'process' | null 
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 
+function CountWithUnit({ count, unit = '명' }: { count: number; unit?: string }) {
+  return <>{count}<span className="text-base font-medium text-muted-foreground ml-0.5">{unit}</span></>;
+}
+
 function StatCard({ icon, label, value, sub, color, onClick, actionLabel }: {
   icon: ReactNode;
   label: string;
-  value: string | number;
+  value: ReactNode;
   sub?: string;
   color?: string;
   onClick?: () => void;
@@ -430,10 +443,26 @@ export default function CounselorDashboard() {
   const [selectedPeriodPreset, setSelectedPeriodPreset] = useState('custom');
   const [showPeriodSelector, setShowPeriodSelector] = useState(false);
   const [monthCounts, setMonthCounts] = useState<Record<string, number>>({});
-  const [calendarEntries, setCalendarEntries] = useState<DashboardCalendarEntry[]>([]);
   const [monthLoading, setMonthLoading] = useState(false);
-  const [entriesLoading, setEntriesLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [appointmentError, setAppointmentError] = useState<string | null>(null);
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false);
+  const [appointmentSaving, setAppointmentSaving] = useState(false);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
+  const [appointmentForm, setAppointmentForm] = useState({
+    date: toDateKey(new Date()),
+    startTime: '09:00',
+    endTime: '10:00',
+    memo: '',
+  });
+  const [appointmentClientQuery, setAppointmentClientQuery] = useState('');
+  const [appointmentClientResults, setAppointmentClientResults] = useState<ClientRow[]>([]);
+  const [appointmentClient, setAppointmentClient] = useState<{ id: string; name: string } | null>(null);
+  const [completingAppointment, setCompletingAppointment] = useState<AppointmentRow | null>(null);
+  const [completeSessionForm, setCompleteSessionForm] = useState({ type: '초기상담', content: '', next_action: '' });
+  const [completingSaving, setCompletingSaving] = useState(false);
   const [memoValue, setMemoValue] = useState('');
   const [savedMemoValue, setSavedMemoValue] = useState('');
   const [memoLoading, setMemoLoading] = useState(false);
@@ -543,11 +572,9 @@ export default function CounselorDashboard() {
 
     setMonthLoading(true);
     try {
-      const counts = await fetchDashboardCalendarMonthCounts(
-        calendarCounselorId,
-        toDateKey(startOfMonth(calendarMonth)),
-        toDateKey(endOfMonth(calendarMonth)),
-      );
+      const monthStart = toDateKey(startOfMonth(calendarMonth));
+      const monthEnd = toDateKey(endOfMonth(calendarMonth));
+      const counts = await fetchAppointmentMonthCounts(calendarCounselorId, monthStart, monthEnd);
       setMonthCounts(counts);
       setCalendarError(null);
     } catch (e: any) {
@@ -557,22 +584,22 @@ export default function CounselorDashboard() {
     }
   }, [calendarCounselorId, calendarMonth]);
 
-  const loadCalendarEntries = useCallback(async () => {
+  const loadAppointments = useCallback(async () => {
     if (!calendarCounselorId) {
-      setCalendarEntries([]);
-      setCalendarError('캘린더 기능을 호출하려면 연결된 상담사 정보가 필요합니다.');
+      setAppointments([]);
+      setAppointmentError('예약 기능을 호출하려면 연결된 상담사 정보가 필요합니다.');
       return;
     }
 
-    setEntriesLoading(true);
+    setAppointmentsLoading(true);
     try {
-      const entries = await fetchDashboardCalendarEntries(calendarCounselorId, currentRange.start, currentRange.end);
-      setCalendarEntries(entries);
-      setCalendarError(null);
+      const rows = await fetchAppointments(calendarCounselorId, currentRange.start, currentRange.end);
+      setAppointments(rows);
+      setAppointmentError(null);
     } catch (e: any) {
-      setCalendarError(e.message || '일정 목록을 불러오지 못했습니다.');
+      setAppointmentError(e.message || '예약 목록을 불러오지 못했습니다.');
     } finally {
-      setEntriesLoading(false);
+      setAppointmentsLoading(false);
     }
   }, [calendarCounselorId, currentRange.end, currentRange.start]);
 
@@ -583,8 +610,8 @@ export default function CounselorDashboard() {
 
   useEffect(() => {
     if (activeTab !== 'calendar') return;
-    loadCalendarEntries();
-  }, [activeTab, loadCalendarEntries]);
+    loadAppointments();
+  }, [activeTab, loadAppointments]);
 
   useEffect(() => {
     if (activeTab !== 'calendar') return;
@@ -592,16 +619,16 @@ export default function CounselorDashboard() {
     const intervalId = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       loadCalendarMonth();
-      loadCalendarEntries();
+      loadAppointments();
     }, 30 * 60 * 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [activeTab, loadCalendarEntries, loadCalendarMonth]);
+  }, [activeTab, loadAppointments, loadCalendarMonth]);
 
   const refreshCalendar = useCallback(() => {
     loadCalendarMonth();
-    loadCalendarEntries();
-  }, [loadCalendarEntries, loadCalendarMonth]);
+    loadAppointments();
+  }, [loadAppointments, loadCalendarMonth]);
 
   const loadMyMemo = useCallback(async () => {
     if (!memoAuthUserId) {
@@ -705,11 +732,149 @@ export default function CounselorDashboard() {
     setCalendarMode('selected-period');
   }, [selectedDate, selectedPeriod.end, selectedPeriod.start, todayKey]);
 
-  const handleCalendarRowClick = useCallback((entry: DashboardCalendarEntry) => {
-    const status = getDayStatus(entry.counselDate, todayKey);
-    const tab = status === 'past' ? 'history' : 'input';
-    navigate(`/clients/list?clientId=${encodeURIComponent(entry.clientId)}&tab=${tab}&date=${entry.counselDate}`);
-  }, [navigate, todayKey]);
+  useEffect(() => {
+    if (!appointmentClientQuery.trim() || !calendarCounselorId) {
+      setAppointmentClientResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchDashboardClients(calendarCounselorId, appointmentClientQuery);
+        setAppointmentClientResults(results);
+      } catch {
+        setAppointmentClientResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [appointmentClientQuery, calendarCounselorId]);
+
+  const openAppointmentForm = useCallback(() => {
+    setEditingAppointmentId(null);
+    setAppointmentForm({
+      date: selectedDate || todayKey,
+      startTime: '09:00',
+      endTime: '10:00',
+      memo: '',
+    });
+    setAppointmentClient(null);
+    setAppointmentClientQuery('');
+    setAppointmentClientResults([]);
+    setShowAppointmentForm(true);
+  }, [selectedDate, todayKey]);
+
+  const openRescheduleForm = useCallback((appointment: AppointmentRow) => {
+    setEditingAppointmentId(appointment.id);
+    setAppointmentForm({
+      date: appointment.date,
+      startTime: appointment.start_time.slice(0, 5),
+      endTime: appointment.end_time.slice(0, 5),
+      memo: appointment.memo ?? '',
+    });
+    setAppointmentClient(
+      appointment.client_id ? { id: appointment.client_id, name: appointment.client_name || '' } : null,
+    );
+    setAppointmentClientQuery('');
+    setAppointmentClientResults([]);
+    setShowAppointmentForm(true);
+  }, []);
+
+  const handleSubmitAppointment = useCallback(async () => {
+    if (!calendarCounselorId) {
+      toast.error('로그인한 상담사 정보를 찾을 수 없습니다.');
+      return;
+    }
+
+    setAppointmentSaving(true);
+    try {
+      if (editingAppointmentId) {
+        await updateAppointment(editingAppointmentId, calendarCounselorId, {
+          client_id: appointmentClient?.id ?? null,
+          date: appointmentForm.date,
+          start_time: appointmentForm.startTime,
+          end_time: appointmentForm.endTime,
+          memo: appointmentForm.memo,
+        });
+        toast.success('예약 일정이 변경되었습니다.');
+      } else {
+        await createAppointment({
+          counselor_id: calendarCounselorId,
+          client_id: appointmentClient?.id ?? null,
+          date: appointmentForm.date,
+          start_time: appointmentForm.startTime,
+          end_time: appointmentForm.endTime,
+          memo: appointmentForm.memo,
+        });
+        toast.success('예약이 등록되었습니다.');
+      }
+      setShowAppointmentForm(false);
+      setEditingAppointmentId(null);
+      await Promise.all([loadAppointments(), loadCalendarMonth()]);
+    } catch (e: any) {
+      toast.error(e.message || (editingAppointmentId ? '일정 변경에 실패했습니다.' : '예약 등록에 실패했습니다.'));
+    } finally {
+      setAppointmentSaving(false);
+    }
+  }, [appointmentClient, appointmentForm, calendarCounselorId, editingAppointmentId, loadAppointments, loadCalendarMonth]);
+
+  const handleCancelAppointment = useCallback(async (id: string) => {
+    try {
+      await updateAppointmentStatus(id, '취소');
+      toast.success('상담 예약을 취소했습니다.');
+      await Promise.all([loadAppointments(), loadCalendarMonth()]);
+    } catch (e: any) {
+      toast.error(e.message || '예약 취소에 실패했습니다.');
+    }
+  }, [loadAppointments, loadCalendarMonth]);
+
+  const openCompleteForm = useCallback((appointment: AppointmentRow) => {
+    if (!appointment.client_id) {
+      toast.error('이 예약에는 연결된 고객이 없어 완료 처리할 수 없습니다. 먼저 "일정변경"으로 대상 고객을 지정하세요.');
+      return;
+    }
+    setShowAppointmentForm(false);
+    setCompletingAppointment(appointment);
+    setCompleteSessionForm({ type: '초기상담', content: '', next_action: '' });
+  }, []);
+
+  const handleCompleteAppointment = useCallback(async () => {
+    if (!completingAppointment || !calendarCounselorId) return;
+
+    setCompletingSaving(true);
+    try {
+      await completeAppointmentWithSession(completingAppointment, calendarCounselorId, {
+        type: completeSessionForm.type,
+        content: completeSessionForm.content,
+        next_action: completeSessionForm.next_action || null,
+      });
+      toast.success('상담기록이 저장되고 예약이 완료 처리되었습니다.');
+      setCompletingAppointment(null);
+      await Promise.all([loadAppointments(), loadCalendarMonth(), loadStats()]);
+    } catch (e: any) {
+      toast.error(e.message || '완료 처리에 실패했습니다.');
+    } finally {
+      setCompletingSaving(false);
+    }
+  }, [calendarCounselorId, completeSessionForm, completingAppointment, loadAppointments, loadCalendarMonth, loadStats]);
+
+  const handleDeleteAppointment = useCallback(async (id: string) => {
+    if (!window.confirm('이 예약을 삭제할까요? 삭제하면 되돌릴 수 없습니다.')) return;
+    try {
+      await deleteAppointment(id);
+      toast.success('예약이 삭제되었습니다.');
+      await Promise.all([loadAppointments(), loadCalendarMonth()]);
+    } catch (e: any) {
+      toast.error(e.message || '예약 삭제에 실패했습니다.');
+    }
+  }, [loadAppointments, loadCalendarMonth]);
+
+  const handleAppointmentHistoryClick = useCallback((appointment: AppointmentRow) => {
+    if (!appointment.client_id) {
+      toast.error('이 예약에는 연결된 고객이 없어 상담이력으로 이동할 수 없습니다.');
+      return;
+    }
+    // /clients/list를 경유하지 않고 상세 페이지로 바로 이동 (목록 로딩을 기다릴 필요 없음)
+    navigate(`/clients/detail/${encodeURIComponent(appointment.client_id)}?tab=history&date=${appointment.date}`);
+  }, [navigate]);
 
   const openClientList = useCallback((params?: Record<string, string>) => {
     const searchParams = new URLSearchParams(params);
@@ -860,7 +1025,7 @@ export default function CounselorDashboard() {
             <StatCard
               icon={<Users size={18} color={PRIMARY_HEX} />}
               label="전체 상담자 수"
-              value={totalClients}
+              value={<CountWithUnit count={totalClients} />}
               sub="담당 상담자"
               color="oklch(0.92 0.05 162.5)"
               onClick={() => openClientList()}
@@ -869,28 +1034,28 @@ export default function CounselorDashboard() {
             <StatCard
               icon={<TrendingUp size={18} color="#4299E1" />}
               label="진행 중"
-              value={activeProcesses}
+              value={<CountWithUnit count={activeProcesses} />}
               sub="프로세스 진행"
               color="oklch(0.92 0.04 240)"
-              onClick={() => openClientList()}
+              onClick={() => openClientList({ filter: 'in-progress' })}
               actionLabel="진행 현황 보기"
             />
             <StatCard
               icon={<CheckCircle2 size={18} color={PRIMARY_HEX} />}
               label="취업 완료"
-              value={completedClients}
+              value={<CountWithUnit count={completedClients} />}
               sub={totalClients > 0 ? `성사율 ${Math.round(completedClients / totalClients * 100)}%` : '-'}
               color="oklch(0.92 0.05 162.5)"
-              onClick={() => openClientList({ stage: '취업완료' })}
+              onClick={() => openClientList({ filter: 'employed' })}
               actionLabel="완료 대상 보기"
             />
             <StatCard
               icon={<AlertCircle size={18} color="#F6AD55" />}
               label="후속 상담 필요"
-              value={pendingClients}
+              value={<CountWithUnit count={pendingClients} />}
               sub="팔로업 대상"
               color="oklch(0.95 0.06 85)"
-              onClick={() => openClientList()}
+              onClick={() => openClientList({ filter: 'follow-up' })}
               actionLabel="후속 대상 보기"
             />
           </>
@@ -969,7 +1134,7 @@ export default function CounselorDashboard() {
               <BarChart data={monthlyStats} barSize={14}>
                 <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.008 75)" vertical={false} />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'oklch(0.55 0.015 65)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: 'oklch(0.55 0.015 65)' }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'oklch(0.55 0.015 65)' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '6px', border: '1px solid oklch(0.88 0.008 75)', fontSize: '12px' }} />
                 <Bar dataKey="sessions" name="세션 수" fill={PRIMARY_HEX} radius={[3, 3, 0, 0]} />
                 <Bar dataKey="clients" name="상담 진행 인원" fill="#4299E1" radius={[3, 3, 0, 0]} />
@@ -1027,7 +1192,7 @@ export default function CounselorDashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.008 75)" vertical={false} />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'oklch(0.55 0.015 65)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: 'oklch(0.55 0.015 65)' }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'oklch(0.55 0.015 65)' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ borderRadius: '6px', border: '1px solid oklch(0.88 0.008 75)', fontSize: '12px' }} />
                 <Area type="monotone" dataKey="clients" name="상담 진행 인원" stroke="#4299E1" strokeWidth={2} fill="url(#clientGrad)" />
               </AreaChart>
@@ -1076,10 +1241,10 @@ export default function CounselorDashboard() {
           <div className="rounded-md border border-border bg-card p-5 shadow-sm">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-foreground">현재 담당 일정</h3>
+                <h3 className="text-sm font-semibold text-foreground">상담 일정</h3>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {calendarMode === 'today' && `기준일 ${formatPanelDate(currentRange.anchor)}`}
-                  {calendarMode === 'week' && ` · 최근 7일 ${formatPanelDate(currentRange.start)} ~ ${formatPanelDate(currentRange.end)}`}
+                  {calendarMode === 'week' && `오늘부터 7일 ${formatPanelDate(currentRange.start)} ~ ${formatPanelDate(currentRange.end)}`}
                   {calendarMode === 'selected-period' && `선택 기간 ${formatPanelDate(currentRange.start)} ~ ${formatPanelDate(currentRange.end)}`}
                 </div>
               </div>
@@ -1120,11 +1285,20 @@ export default function CounselorDashboard() {
                   기간 선택
                 </button>
                 <button
+                  type="button"
+                  onClick={() => (showAppointmentForm ? setShowAppointmentForm(false) : openAppointmentForm())}
+                  className="inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-xs font-semibold text-white"
+                  style={{ background: PRIMARY_HEX }}
+                >
+                  {showAppointmentForm ? <X size={14} /> : <Plus size={14} />}
+                  {showAppointmentForm ? '닫기' : '새 예약'}
+                </button>
+                <button
                   onClick={refreshCalendar}
                   className="rounded-sm border p-2 hover:bg-muted"
                   title="일정 새로고침"
                 >
-                  <RefreshCw size={14} className={monthLoading || entriesLoading ? 'animate-spin' : ''} />
+                  <RefreshCw size={14} className={monthLoading || appointmentsLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
             </div>
@@ -1182,56 +1356,287 @@ export default function CounselorDashboard() {
               </div>
             )}
 
-            {calendarError && (
+            {(calendarError || appointmentError) && (
               <div className="mb-3 rounded-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
                 {calendarError}
+                {calendarError && appointmentError && <br />}
+                {appointmentError}
               </div>
             )}
 
-            {entriesLoading ? (
+            {showAppointmentForm && (
+            <div className="mb-4 rounded-sm border border-border bg-muted/15 p-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">날짜</span>
+                  <input
+                    type="date"
+                    value={appointmentForm.date}
+                    onChange={e => setAppointmentForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">시작 시간</span>
+                  <input
+                    type="time"
+                    value={appointmentForm.startTime}
+                    onChange={e => setAppointmentForm(prev => ({ ...prev, startTime: e.target.value }))}
+                    className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">종료 시간</span>
+                  <input
+                    type="time"
+                    value={appointmentForm.endTime}
+                    onChange={e => setAppointmentForm(prev => ({ ...prev, endTime: e.target.value }))}
+                    className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </label>
+                <div className="relative space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">대상 고객 (선택)</span>
+                  <input
+                    type="text"
+                    value={appointmentClient ? appointmentClient.name : appointmentClientQuery}
+                    onChange={e => {
+                      setAppointmentClient(null);
+                      setAppointmentClientQuery(e.target.value);
+                    }}
+                    placeholder="이름/전화번호로 검색"
+                    className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  {!appointmentClient && appointmentClientResults.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full rounded-sm border border-border bg-background shadow-md">
+                      {appointmentClientResults.map(client => (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onClick={() => {
+                            setAppointmentClient({ id: client.id, name: client.name });
+                            setAppointmentClientResults([]);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                        >
+                          {client.name} <span className="text-xs text-muted-foreground">{client.phone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <label className="mt-3 block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">메모 (선택)</span>
+                <input
+                  type="text"
+                  value={appointmentForm.memo}
+                  onChange={e => setAppointmentForm(prev => ({ ...prev, memo: e.target.value }))}
+                  placeholder="예약 관련 메모"
+                  className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+
+              <div className="mt-3 flex justify-end gap-2">
+                {editingAppointmentId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAppointmentForm(false);
+                      setEditingAppointmentId(null);
+                    }}
+                    className="rounded-sm border px-4 py-2 text-xs font-semibold hover:bg-muted"
+                  >
+                    취소
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSubmitAppointment}
+                  disabled={appointmentSaving}
+                  className="inline-flex items-center gap-1.5 rounded-sm px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  style={{ background: PRIMARY_HEX }}
+                >
+                  {appointmentSaving && <Loader2 size={12} className="animate-spin" />}
+                  {editingAppointmentId ? '일정 변경 저장' : '예약 등록'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {completingAppointment && (
+            <div className="mb-4 rounded-sm border border-border bg-muted/15 p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium text-foreground">상담 완료 처리</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {completingAppointment.client_name || '담당 고객 미지정'} · {formatPanelDate(completingAppointment.date)} {formatTimeRange(completingAppointment.start_time, completingAppointment.end_time)}
+                    <br />
+                    완료 처리 시 아래 내용으로 상담기록(상담이력)이 함께 생성되어 이 예약과 연결됩니다.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCompletingAppointment(null)}
+                  className="rounded-sm p-1.5 hover:bg-muted"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">상담 유형</span>
+                  <select
+                    value={completeSessionForm.type}
+                    onChange={e => setCompleteSessionForm(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {['초기상담', '심층상담', '취업지원', '취업완료', '사후관리', '기타'].map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="mt-3 block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">상담 내용 *</span>
+                <textarea
+                  value={completeSessionForm.content}
+                  onChange={e => setCompleteSessionForm(prev => ({ ...prev, content: e.target.value }))}
+                  rows={4}
+                  placeholder="상담 내용을 입력하세요..."
+                  className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+              </label>
+
+              <label className="mt-3 block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">다음 조치사항 (선택)</span>
+                <textarea
+                  value={completeSessionForm.next_action}
+                  onChange={e => setCompleteSessionForm(prev => ({ ...prev, next_action: e.target.value }))}
+                  rows={2}
+                  placeholder="다음 상담 시 확인할 조치사항을 입력하세요..."
+                  className="w-full rounded-sm border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+              </label>
+
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCompletingAppointment(null)}
+                  className="rounded-sm border px-4 py-2 text-xs font-semibold hover:bg-muted"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCompleteAppointment}
+                  disabled={completingSaving || !completeSessionForm.content.trim()}
+                  className="inline-flex items-center gap-1.5 rounded-sm px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  style={{ background: PRIMARY_HEX }}
+                >
+                  {completingSaving && <Loader2 size={12} className="animate-spin" />}
+                  상담기록 저장 + 완료 처리
+                </button>
+              </div>
+            </div>
+          )}
+
+            {appointmentsLoading ? (
               <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                 <Loader2 size={16} className="animate-spin" />
-                일정 목록을 불러오는 중입니다.
+                예약 목록을 불러오는 중입니다.
               </div>
-            ) : calendarEntries.length === 0 ? (
+            ) : appointments.length === 0 ? (
               <div className="rounded-sm border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
-                선택한 범위에 표시할 일정이 없습니다.
+                선택한 범위에 예정된 상담 일정이 없습니다.
               </div>
             ) : (
               <div className="space-y-3">
-                {calendarEntries.map(entry => {
-                  const status = getDayStatus(entry.counselDate, todayKey);
-                  const statusLabel = status === 'past' ? '지난 일정' : status === 'today' ? '오늘 일정' : '예정';
-                  const statusClass = status === 'past'
-                    ? 'text-muted-foreground bg-muted'
-                    : status === 'today'
-                      ? 'text-white'
-                      : 'text-foreground bg-emerald-50';
-
+                {appointments.map(appointment => {
+                  const isCompleted = appointment.status === '완료';
                   return (
-                    <button
-                      key={entry.counselId}
-                      type="button"
-                      onClick={() => handleCalendarRowClick(entry)}
-                      className="flex w-full items-center gap-4 rounded-md border border-border/80 bg-background px-4 py-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-muted/20 hover:shadow-md"
+                  <div
+                    key={appointment.id}
+                    onClick={isCompleted ? () => handleAppointmentHistoryClick(appointment) : undefined}
+                    role={isCompleted ? 'button' : undefined}
+                    tabIndex={isCompleted ? 0 : undefined}
+                    onKeyDown={isCompleted ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleAppointmentHistoryClick(appointment);
+                      }
+                    } : undefined}
+                    title={isCompleted ? '클릭하면 이 고객의 상담이력으로 이동합니다.' : undefined}
+                    className={`flex flex-wrap items-center gap-4 rounded-md border border-border/80 bg-background px-4 py-3.5 shadow-sm ${
+                      isCompleted ? 'cursor-pointer transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-muted/20 hover:shadow-md' : ''
+                    }`}
+                  >
+                    <div className="w-[88px] flex-shrink-0 rounded-sm bg-muted/20 px-3 py-2 text-center">
+                      <div className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground">
+                        {appointment.date.slice(5).replace('-', '.')}
+                      </div>
+                      <div className="mt-1 text-sm font-semibold leading-5 text-foreground">
+                        {formatTimeRange(appointment.start_time, appointment.end_time)}
+                      </div>
+                    </div>
+                    <div className="h-12 w-px flex-shrink-0 bg-border" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-foreground">
+                        {appointment.client_name || '담당 고객 미지정'}
+                      </div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                        {appointment.memo || '메모 없음'}
+                      </div>
+                    </div>
+                    <span
+                      className="rounded-sm px-2 py-1 text-[11px] font-medium"
+                      style={
+                        appointment.status === '예정'
+                          ? { color: PRIMARY_HEX, background: 'rgba(0, 156, 100, 0.10)' }
+                          : appointment.status === '완료'
+                            ? { color: '#4299E1', background: 'rgba(66, 153, 225, 0.10)' }
+                            : { color: '#9CA3AF', background: 'rgba(156, 163, 175, 0.15)' }
+                      }
                     >
-                      <div className="w-[88px] flex-shrink-0 rounded-sm bg-muted/20 px-3 py-2 text-center">
-                        <div className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground">
-                          {entry.counselDate.slice(5).replace('-', '.')}
-                        </div>
-                        <div className="mt-1 text-sm font-semibold leading-5 text-foreground">
-                          {formatTimeRange(entry.startTime, entry.endTime)}
-                        </div>
+                      {appointment.status}
+                    </span>
+                    {appointment.status === '예정' && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openRescheduleForm(appointment)}
+                          className="inline-flex items-center gap-1 rounded-sm border px-2.5 py-1.5 text-[11px] font-medium hover:bg-muted"
+                        >
+                          <CalendarClock size={12} />
+                          일정변경
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openCompleteForm(appointment)}
+                          className="rounded-sm border px-2.5 py-1.5 text-[11px] font-medium hover:bg-muted"
+                        >
+                          완료 처리
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelAppointment(appointment.id)}
+                          className="rounded-sm border px-2.5 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/5"
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAppointment(appointment.id)}
+                          className="rounded-sm border p-1.5 text-destructive hover:bg-destructive/5"
+                          title="삭제"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
-                      <div className="h-12 w-px flex-shrink-0 bg-border" />
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate text-sm font-semibold text-foreground">{entry.clientName}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{entry.participationStage || '미설정'}</div>
-                      </div>
-                      <span className={`text-[11px] px-2 py-1 rounded-sm font-medium ${statusClass}`} style={status === 'today' ? { background: PRIMARY_HEX } : undefined}>
-                        {statusLabel}
-                      </span>
-                    </button>
+                    )}
+                  </div>
                   );
                 })}
               </div>

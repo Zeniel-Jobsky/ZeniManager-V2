@@ -357,6 +357,7 @@ export type Database = {
     Tables: {
       clients: { Row: ClientRow; Insert: ClientInsert; Update: Partial<ClientInsert> };
       sessions: { Row: SessionRow; Insert: SessionInsert; Update: Partial<SessionInsert> };
+      appointments: { Row: AppointmentRow; Insert: AppointmentInsert; Update: Partial<AppointmentInsert> };
       counselors: { Row: CounselorRow; Insert: CounselorInsert; Update: Partial<CounselorInsert> };
       survey_responses: { Row: SurveyRow; Insert: SurveyInsert; Update: Partial<SurveyInsert> };
       memo_cards: { Row: MemoCardRow; Insert: MemoCardInsert; Update: Partial<MemoCardInsert> };
@@ -457,6 +458,31 @@ export interface SessionRow {
 }
 
 export type SessionInsert = Omit<SessionRow, 'id' | 'created_at'> & { id?: string };
+
+// DB 스키마: public.appointments 테이블 기준 (예약/일정, sessions와 별개 — 아직 진행하지 않은 미래 일정)
+// "완료" 처리 시 session_id로 실제 상담기록(sessions)과 1:1 연결된다 (api.appointments.ts의
+// completeAppointmentWithSession 참고) — 이 링크가 있어야 완료된 예약 클릭 시 정확한 상담이력으로 이동 가능.
+export type AppointmentStatus = '예정' | '완료' | '취소';
+
+export interface AppointmentRow {
+  id: string;
+  counselor_id: string;
+  client_id: string | null;
+  client_name: string | null; // clients 임베드 조회 결과 (client_id가 있을 때만)
+  session_id: string | null; // 완료 처리 시 생성된 sessions.id (완료 전엔 null)
+  date: string;
+  start_time: string; // "HH:MM" 또는 "HH:MM:SS"
+  end_time: string;
+  status: AppointmentStatus;
+  memo: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AppointmentInsert = Omit<AppointmentRow, 'id' | 'client_name' | 'session_id' | 'status' | 'created_at' | 'updated_at'> & {
+  id?: string;
+  status?: AppointmentStatus;
+};
 
 // DB 스키마: public.user 테이블 기준
 export interface CounselorRow {

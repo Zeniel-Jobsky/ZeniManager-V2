@@ -207,10 +207,6 @@ export default function ClientRegister() {
     try {
       const createdClient = await createClient({
         name: form.name,
-        desired_job: [form.desired_job_1, form.desired_job_2, form.desired_job_3]
-          .map(value => value.trim())
-          .filter(Boolean)
-          .join(', ') || null,
         resident_id: encrypt(form.res_id_back), // 뒷자리 암호화 적용
         birth_date: form.birth_date || null,
         age: form.age ? parseInt(form.age, 10) : null,

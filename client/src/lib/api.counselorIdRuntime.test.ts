@@ -39,7 +39,7 @@ function createQueryChain(
     error: result.error ?? null,
   };
 
-  ['select', 'eq', 'in', 'order', 'range'].forEach(method => {
+  ['select', 'eq', 'in', 'order', 'range', 'limit'].forEach(method => {
     chain[method] = (...args: unknown[]) => {
       queryLog.push({ table, operation, method, args });
       return chain;

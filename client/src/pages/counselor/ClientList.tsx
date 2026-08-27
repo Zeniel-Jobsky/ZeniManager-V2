@@ -1,29 +1,26 @@
 /**
  * Client List Page (상담자 목록)
- * - 탭: 상담관리 / 상담이력 / 상담내용 입력 / 구직준비도 설문
- * - 필터: 전체 / 점수미확정 / 후속상담 / 취업처리
+ * - 필터: 전체 / 진행 중 / 취업 완료 / 후속 상담 / 점수 미확정
+ * - 행 클릭 시 /clients/detail/:id로 이동 (상담이력/상담입력 등은 그 화면에서 처리)
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ROLE_COUNSELOR, isEmploymentCompletedStage } from '@shared/const';
-import { useAuth } from '@/contexts/AuthContext';
 import { usePageGuard } from '@/hooks/usePageGuard';
 import {
-  Search, Plus, X, ChevronRight, ChevronLeft, Phone, User,
-  Edit3, ClipboardList, Loader2, Trash2, Save,
-  AlertTriangle, RefreshCw, ArrowUp, ArrowDown, GripVertical
+  Search, Plus, ChevronRight, ChevronLeft,
+  Edit3, Loader2, Trash2,
+  RefreshCw, ArrowUp, ArrowDown, GripVertical
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchClients, fetchSessions, createSession, deleteSession, fetchSurveys, createSurvey, updateSurvey, updateClient, deleteClient } from '@/lib/api';
+import { fetchClients, updateClient, deleteClient } from '@/lib/api';
 import { syncEmploymentSuccessCase } from '@/lib/employmentSuccessCase';
-import type { ClientRow, SessionRow, SurveyRow } from '@/lib/supabase';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import type { ClientRow } from '@/lib/supabase';
 
 const PRIMARY = '#009C64';
 
-type FilterType = 'all' | 'no-score' | 'follow-up' | 'employed';
-type ClientModalTab = 'manage' | 'history' | 'input' | 'survey';
+type FilterType = 'all' | 'in-progress' | 'employed' | 'follow-up' | 'no-score';
 
 function hasScore(client: ClientRow): boolean {
   return client.score != null;
@@ -39,628 +36,6 @@ function formatFollowUpStat(client: ClientRow): string {
 
 function isEmploymentCompleted(client: ClientRow): boolean {
   return isEmploymentCompletedStage(client.participation_stage);
-}
-
-// ─── Survey Questions from 구직준비도점검설문지 ─────────────────────────────────
-
-const SURVEY_QUESTIONS = [
-  { key: 'q1_job_goal', label: '구직목표 수립', desc: '취업하고자 하는 직종이나 분야에 대한 목표가 있습니까?' },
-  { key: 'q2_will_3months', label: '3개월 내 구직의지', desc: '3개월 이내에 취업하고자 하는 의지가 있습니까?' },
-  { key: 'q3_job_plan', label: '희망직종 구직계획', desc: '희망 직종에 취업하기 위한 구체적인 계획이 있습니까?' },
-  { key: 'q4_skill_need', label: '구직기술 필요도', desc: '이력서 작성, 면접 준비 등 구직기술 지원이 필요합니까?' },
-  { key: 'q5_info_need', label: '구직정보 필요도', desc: '취업처 발굴, 채용정보 등 구직정보 지원이 필요합니까?' },
-  { key: 'q6_competency', label: '취업역량 향상도', desc: '직업훈련, 자격증 취득 등 취업역량 향상 지원이 필요합니까?' },
-  { key: 'q7_barrier', label: '취업장애요인', desc: '건강, 가족돌봄, 교통 등 취업에 장애가 되는 요인이 있습니까?' },
-  { key: 'q8_health', label: '건강상태', desc: '현재 건강상태는 취업활동에 지장이 없습니까?' },
-] as const;
-
-const SURVEY_OPTIONS = [
-  { value: 3, label: '예', color: '#009C64' },
-  { value: 2, label: '보통', color: '#f59e0b' },
-  { value: 1, label: '아니오', color: '#ef4444' },
-];
-
-const SURVEY_FIELD_MAP = {
-  q1_job_goal: 'survey_1',
-  q2_will_3months: 'survey_2',
-  q3_job_plan: 'survey_3',
-  q4_skill_need: 'survey_4',
-  q5_info_need: 'survey_5',
-  q6_competency: 'survey_6',
-  q7_barrier: 'survey_7',
-  q8_health: 'survey_8',
-} as const;
-
-function getSurveyAnswer(survey: SurveyRow | Record<string, unknown>, key: keyof typeof SURVEY_FIELD_MAP): number | null {
-  const value = (survey as any)[key] ?? (survey as any)[SURVEY_FIELD_MAP[key]];
-  return typeof value === 'number' ? value : null;
-}
-
-// ─── Survey Tab ───────────────────────────────────────────────────────────────
-
-function SurveyTab({ clientId }: { clientId: string }) {
-  const [surveys, setSurveys] = useState<SurveyRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [barrierDetail, setBarrierDetail] = useState('');
-  const [surveyDate, setSurveyDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchSurveys(clientId);
-      setSurveys(data);
-    } catch (e: any) {
-      toast.error('설문 데이터 로드 실패: ' + e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [clientId]);
-
-  const latestSurvey = surveys[0] ?? null;
-
-  const syncFormFromSurvey = useCallback((survey: SurveyRow | null) => {
-    const today = new Date().toISOString().split('T')[0];
-    if (!survey) {
-      setAnswers({});
-      setBarrierDetail('');
-      setSurveyDate(today);
-      return;
-    }
-
-    const nextAnswers: Record<string, number> = {};
-    (Object.keys(SURVEY_FIELD_MAP) as Array<keyof typeof SURVEY_FIELD_MAP>).forEach(key => {
-      const value = getSurveyAnswer(survey, key);
-      if (typeof value === 'number') {
-        nextAnswers[key] = value;
-      }
-    });
-
-    setAnswers(nextAnswers);
-    setBarrierDetail((survey as any).survey_7_memo || (survey as any).q7_barrier_detail || '');
-    setSurveyDate(survey.survey_date || today);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    syncFormFromSurvey(latestSurvey);
-  }, [latestSurvey, syncFormFromSurvey]);
-
-  const resetForm = () => {
-    syncFormFromSurvey(latestSurvey);
-  };
-
-  const totalScore = SURVEY_QUESTIONS.reduce((sum, q) => sum + (answers[q.key] || 0), 0);
-  const maxScore = SURVEY_QUESTIONS.length * 3;
-
-  const handleSave = async () => {
-    if (Object.keys(answers).length < SURVEY_QUESTIONS.length) {
-      toast.error('모든 항목에 응답해주세요.');
-      return;
-    }
-    if (!isSupabaseConfigured()) {
-      toast.error('Supabase 설정이 필요합니다. 설정 메뉴에서 연결 정보를 입력하세요.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload = {
-        client_id: clientId,
-        survey_date: surveyDate,
-        survey_1: answers['q1_job_goal'] || null,
-        survey_2: answers['q2_will_3months'] || null,
-        survey_3: answers['q3_job_plan'] || null,
-        survey_4: answers['q4_skill_need'] || null,
-        survey_5: answers['q5_info_need'] || null,
-        survey_6: answers['q6_competency'] || null,
-        survey_7: answers['q7_barrier'] || null,
-        survey_8: answers['q8_health'] || null,
-        survey_7_memo: answers['q7_barrier'] && answers['q7_barrier'] >= 2 ? barrierDetail || null : null,
-      };
-      if (latestSurvey) {
-        await updateSurvey(latestSurvey.survey_id, payload);
-      } else {
-        await createSurvey(payload);
-      }
-      toast.success('설문이 저장되었습니다.');
-      syncFormFromSurvey((await fetchSurveys(clientId))[0] ?? null);
-      load();
-    } catch (e: any) {
-      toast.error('저장 실패: ' + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-12">
-      <Loader2 size={20} className="animate-spin text-muted-foreground" />
-    </div>
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-foreground">구직준비도 설문 이력</div>
-        <button
-          onClick={resetForm}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-medium text-white"
-          style={{ background: PRIMARY }}
-        >
-          <Plus size={12} />
-          설문 내용 불러오기
-        </button>
-      </div>
-
-      <div className="border border-border rounded-sm p-4 space-y-4 bg-muted/10">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">구직준비도 점검 설문지</div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground">설문일</label>
-            <input
-              type="date"
-              value={surveyDate}
-              onChange={e => setSurveyDate(e.target.value)}
-              className="text-xs px-2 py-1 rounded-sm border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {SURVEY_QUESTIONS.map((q, idx) => (
-            <div key={q.key} className="space-y-1.5">
-              <div className="text-xs font-medium text-foreground">
-                {idx + 1}. {q.label}
-              </div>
-              <div className="text-xs text-muted-foreground">{q.desc}</div>
-              <div className="flex gap-2">
-                {SURVEY_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      setAnswers(a => ({ ...a, [q.key]: opt.value }));
-                      if (q.key === 'q7_barrier' && opt.value < 2) {
-                        setBarrierDetail('');
-                      }
-                    }}
-                    className="flex-1 py-1.5 rounded-sm text-xs font-medium border transition-all"
-                    style={answers[q.key] === opt.value
-                      ? { background: opt.color, borderColor: opt.color, color: 'white' }
-                      : { borderColor: '#e5e7eb', color: '#6b7280' }
-                    }
-                  >
-                    {opt.label} ({opt.value}점)
-                  </button>
-                ))}
-              </div>
-              {q.key === 'q7_barrier' && answers['q7_barrier'] && answers['q7_barrier'] >= 2 && (
-                <input
-                  type="text"
-                  value={barrierDetail}
-                  onChange={e => setBarrierDetail(e.target.value)}
-                  placeholder="장애요인 내용을 입력하세요..."
-                  className="w-full px-3 py-1.5 rounded-sm border border-input bg-background text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t border-border">
-          <div className="text-sm">
-            총점: <span className="font-bold" style={{ color: PRIMARY }}>{totalScore}</span>
-            <span className="text-muted-foreground text-xs"> / {maxScore}점</span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-medium text-white disabled:opacity-60"
-              style={{ background: PRIMARY }}
-            >
-              {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
-              저장
-            </button>
-            <button
-              onClick={resetForm}
-              className="px-3 py-1.5 rounded-sm text-xs border border-input hover:bg-muted"
-            >
-              취소
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {surveys.length === 0 ? (
-        <div className="text-sm text-muted-foreground text-center py-8">
-          <ClipboardList size={32} className="mx-auto mb-2 opacity-30" />
-          설문 이력이 없습니다.
-        </div>
-      ) : (
-        surveys.map(s => {
-          const score = s.total_score ?? SURVEY_QUESTIONS.reduce((sum, q) => sum + (getSurveyAnswer(s, q.key as keyof typeof SURVEY_FIELD_MAP) || 0), 0);
-          const pct = Math.round((score / maxScore) * 100);
-          return (
-            <div key={s.survey_id} className="border border-border rounded-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-medium">{s.survey_date} 설문</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold" style={{ color: PRIMARY }}>{score}점</span>
-                  <span className="text-xs text-muted-foreground">({pct}%)</span>
-                </div>
-              </div>
-              <div className="w-full bg-muted rounded-full h-1.5 mb-3">
-                <div
-                  className="h-1.5 rounded-full transition-all"
-                  style={{ width: `${pct}%`, background: PRIMARY }}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {SURVEY_QUESTIONS.map(q => {
-                  const val = getSurveyAnswer(s, q.key as keyof typeof SURVEY_FIELD_MAP);
-                  const opt = SURVEY_OPTIONS.find(o => o.value === val);
-                  return (
-                    <div key={q.key} className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground truncate">{q.label}</span>
-                      <span className="font-medium ml-2 flex-shrink-0" style={{ color: opt?.color || '#6b7280' }}>
-                        {opt?.label || '-'} ({val || 0})
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {(s.survey_7_memo || (s as any).q7_barrier_detail) && (
-                <div className="mt-2 text-xs text-muted-foreground">
-                  장애요인: {s.survey_7_memo || (s as any).q7_barrier_detail}
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-// ─── Client Detail Modal ──────────────────────────────────────────────────────
-
-function ClientDetailModal({
-  client,
-  onClose,
-  initialTab,
-  initialDate,
-}: {
-  client: ClientRow;
-  onClose: () => void;
-  initialTab?: ClientModalTab;
-  initialDate?: string;
-}) {
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<ClientModalTab>(initialTab ?? 'manage');
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [newSession, setNewSession] = useState({
-    type: '초기상담',
-    content: '',
-    nextAction: '',
-    date: initialDate || new Date().toISOString().split('T')[0],
-  });
-  const [saving, setSaving] = useState(false);
-
-  const loadSessions = useCallback(async () => {
-    setSessionsLoading(true);
-    try {
-      const data = await fetchSessions(client.id);
-      setSessions(data);
-    } catch (e: any) {
-      toast.error('이력 로드 실패: ' + e.message);
-    } finally {
-      setSessionsLoading(false);
-    }
-  }, [client.id]);
-
-  useEffect(() => {
-    if (activeTab === 'history' || activeTab === 'input') loadSessions();
-  }, [activeTab, loadSessions]);
-
-  useEffect(() => {
-    setActiveTab(initialTab ?? 'manage');
-    setNewSession({
-      type: '초기상담',
-      content: '',
-      nextAction: '',
-      date: initialDate || new Date().toISOString().split('T')[0],
-    });
-  }, [client.id, initialDate, initialTab]);
-
-  const handleSaveSession = async () => {
-    if (!newSession.content.trim()) { toast.error('상담 내용을 입력해주세요.'); return; }
-    if (!isSupabaseConfigured()) { toast.error('Supabase 설정이 필요합니다.'); return; }
-    setSaving(true);
-    try {
-      await createSession({
-        client_id: client.id,
-        date: newSession.date,
-        type: newSession.type,
-        content: newSession.content,
-        counselor_name: user?.name || null,
-        counselor_id: user?.counselorId || null,
-        next_action: newSession.nextAction || null,
-      });
-      toast.success('상담 내용이 저장되었습니다.');
-      setNewSession({ type: '초기상담', content: '', nextAction: '', date: new Date().toISOString().split('T')[0] });
-      loadSessions();
-      setActiveTab('history');
-    } catch (e: any) {
-      toast.error('저장 실패: ' + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteSession = async (id: string) => {
-    if (!confirm('이 상담 이력을 삭제하시겠습니까?')) return;
-    try {
-      await deleteSession(id);
-      setSessions(prev => prev.filter(s => s.id !== id));
-      toast.success('삭제되었습니다.');
-    } catch (e: any) {
-      toast.error('삭제 실패: ' + e.message);
-    }
-  };
-
-  const stageColors: Record<string, string> = {
-    '초기상담': 'badge-active', '심층상담': 'badge-pending',
-    '취업지원': 'badge-pending', '취업완료': 'badge-completed', '사후관리': 'badge-active',
-  };
-
-  const tabs: { id: ClientModalTab; label: string }[] = [
-    { id: 'manage', label: '상담관리' },
-    { id: 'history', label: '상담이력' },
-    { id: 'input', label: '상담내용 입력' },
-    { id: 'survey', label: '구직준비도 설문' },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
-      <div className="bg-card rounded-md shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-sm flex items-center justify-center text-white font-bold text-sm" style={{ background: PRIMARY }}>
-              {client.name.charAt(0)}
-            </div>
-            <div>
-              <div className="font-semibold text-foreground">{client.name}</div>
-              <div className="text-xs text-muted-foreground">{client.phone} · {client.counselor_name}</div>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-sm hover:bg-muted"><X size={18} /></button>
-        </div>
-
-        <div className="flex border-b border-border px-5 overflow-x-auto">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="px-4 py-2.5 text-sm font-medium border-b-2 transition-all -mb-px whitespace-nowrap"
-              style={activeTab === tab.id
-                ? { borderColor: PRIMARY, color: PRIMARY }
-                : { borderColor: 'transparent', color: '#6b7280' }
-              }
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
-          {activeTab === 'manage' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">기본 정보</div>
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex items-center gap-2">
-                        <User size={13} className="text-muted-foreground" />
-                        {client.name} ({client.gender}, {client.age}세)
-                      </div>
-                      {client.phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone size={13} className="text-muted-foreground" />
-                          {client.phone}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">담당 정보</div>
-                    <div className="text-sm space-y-1">
-                      <div>담당: <span className="font-medium">{client.counselor_name}</span></div>
-                      <div>지점: <span className="font-medium">{client.branch}</span></div>
-                      <div>등록일: <span className="font-medium">{client.initial_counsel_date || client.created_at?.split('T')[0]}</span></div>
-                    </div>
-                  </div>
-                  {client.education_level && (
-                    <div>
-                      <div className="text-xs font-medium text-muted-foreground mb-2">학력</div>
-                      <div className="text-sm">{client.education_level} {client.school && `(${client.school})`}</div>
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">진행 현황</div>
-                    <div className="space-y-2">
-                      {client.participation_stage && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">참여단계</span>
-                          <span className={stageColors[client.participation_stage] || 'badge-active'}>{client.participation_stage}</span>
-                        </div>
-                      )}
-                      {client.business_type && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">사업유형</span>
-                          <span className="text-sm font-medium">{client.business_type}</span>
-                        </div>
-                      )}
-                      {client.competency_grade && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">역량등급</span>
-                          <span className="text-sm font-bold" style={{ color: PRIMARY }}>{client.competency_grade}등급</span>
-                        </div>
-                      )}
-                      {/* Live list/detail score is sourced from score to match dashboard rules. */}
-                      {client.score != null && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">점수</span>
-                          <span className="text-sm font-bold" style={{ color: PRIMARY }}>{client.score}점</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">후속 상담</span>
-                        <span className={needsFollowUp(client) ? 'badge-cancelled' : 'badge-active'}>
-                          {needsFollowUp(client) ? '필요' : '불필요'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {isEmploymentCompleted(client) && (
-                    <div>
-                      <div className="text-xs font-medium text-muted-foreground mb-2">취업 정보</div>
-                      <div className="text-sm space-y-1">
-                        <div>상태: <span className="font-medium">취업완료</span></div>
-                        {client.employment_type && <div>구분: <span className="font-medium">{client.employment_type}</span></div>}
-                        {client.employer && <div>취업처: <span className="font-medium">{client.employer}</span></div>}
-                        {client.employment_date && <div>취업일: <span className="font-medium">{client.employment_date}</span></div>}
-                        {client.salary && <div>급여: <span className="font-medium">{client.salary}</span></div>}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {client.counsel_notes && (
-                <div>
-                  <div className="text-xs font-medium text-muted-foreground mb-2">상담 내역 메모</div>
-                  <div className="text-sm p-3 rounded-sm bg-muted/30 border border-border whitespace-pre-wrap">{client.counsel_notes}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'history' && (
-            <div className="space-y-3">
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 size={18} className="animate-spin text-muted-foreground" />
-                </div>
-              ) : sessions.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-8">상담 이력이 없습니다.</div>
-              ) : (
-                sessions.map(session => (
-                  <div key={session.id} className="border border-border rounded-sm p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="badge-active">{session.type}</span>
-                        <span className="text-xs text-muted-foreground">{session.date}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">{session.counselor_name}</span>
-                        <button
-                          onClick={() => handleDeleteSession(session.id)}
-                          className="p-1 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-sm text-foreground">{session.content}</p>
-                    {session.next_action && (
-                      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <ChevronRight size={12} />
-                        다음 액션: {session.next_action}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {activeTab === 'input' && (
-            <div className="space-y-4">
-              {!isSupabaseConfigured() && (
-                <div className="flex items-center gap-2 p-3 rounded-sm border border-amber-200 bg-amber-50 text-amber-800 text-xs">
-                  <AlertTriangle size={13} />
-                  Supabase 미설정 상태입니다. 저장하려면 설정 메뉴에서 연결 정보를 입력하세요.
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1.5">상담 유형</label>
-                  <select
-                    value={newSession.type}
-                    onChange={e => setNewSession(s => ({ ...s, type: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-sm border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    {['초기상담', '심층상담', '취업지원', '사후관리', '집단상담', '기타'].map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5">상담일</label>
-                  <input
-                    type="date"
-                    value={newSession.date}
-                    onChange={e => setNewSession(s => ({ ...s, date: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-sm border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">상담 내용</label>
-                <textarea
-                  value={newSession.content}
-                  onChange={e => setNewSession(s => ({ ...s, content: e.target.value }))}
-                  placeholder="상담 내용을 입력하세요..."
-                  rows={5}
-                  className="w-full px-3 py-2 rounded-sm border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">다음 액션</label>
-                <input
-                  type="text"
-                  value={newSession.nextAction}
-                  onChange={e => setNewSession(s => ({ ...s, nextAction: e.target.value }))}
-                  placeholder="다음 단계 계획..."
-                  className="w-full px-3 py-2 rounded-sm border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSaveSession}
-                  disabled={saving}
-                  className="btn-primary flex items-center gap-1.5 disabled:opacity-60"
-                >
-                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                  저장
-                </button>
-                <button onClick={onClose} className="btn-cancel">취소</button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'survey' && (
-            <SurveyTab clientId={client.id} />
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ─── Filter Tab Button ────────────────────────────────────────────────────────
@@ -686,7 +61,11 @@ export default function ClientList() {
   const [, navigate] = useLocation();
   const { canRender, user } = usePageGuard('counselor');
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<FilterType>('all');
+  const VALID_FILTERS: FilterType[] = ['all', 'in-progress', 'employed', 'follow-up', 'no-score'];
+  const [filter, setFilter] = useState<FilterType>(() => {
+    const requested = new URLSearchParams(window.location.search).get('filter');
+    return (VALID_FILTERS as string[]).includes(requested || '') ? (requested as FilterType) : 'all';
+  });
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -897,10 +276,23 @@ export default function ClientList() {
     const targetClient = clients.find(client => client.id === clientId);
     if (!targetClient) return;
 
-    navigate(`/clients/detail/${clientId}`);
+    const forwardParams = new URLSearchParams();
+    const tab = params.get('tab');
+    const date = params.get('date');
+    if (tab) forwardParams.set('tab', tab);
+    if (date) forwardParams.set('date', date);
+    const suffix = forwardParams.toString() ? `?${forwardParams.toString()}` : '';
+
+    navigate(`/clients/detail/${clientId}${suffix}`);
     deepLinkHandledRef.current = true;
     window.history.replaceState({}, '', window.location.pathname);
   }, [clients, loading, navigate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('filter')) return;
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   const filtered = clients.filter(c => {
     const matchSearch = !search ||
@@ -910,9 +302,10 @@ export default function ClientList() {
     // List tabs now follow the same live DB rules as the dashboard instead of legacy mock fields.
     const matchFilter =
       filter === 'all' ? true :
-        filter === 'no-score' ? !hasScore(c) :
-          filter === 'follow-up' ? needsFollowUp(c) :
-            filter === 'employed' ? isEmploymentCompleted(c) : true;
+        filter === 'in-progress' ? !isEmploymentCompleted(c) :
+          filter === 'no-score' ? !hasScore(c) :
+            filter === 'follow-up' ? needsFollowUp(c) :
+              filter === 'employed' ? isEmploymentCompleted(c) : true;
     return matchSearch && matchFilter;
   });
 
@@ -938,9 +331,10 @@ export default function ClientList() {
 
   const counts = {
     all: clients.length,
-    'no-score': clients.filter(c => !hasScore(c)).length,
-    'follow-up': clients.filter(c => needsFollowUp(c)).length,
+    'in-progress': clients.filter(c => !isEmploymentCompleted(c)).length,
     employed: clients.filter(c => isEmploymentCompleted(c)).length,
+    'follow-up': clients.filter(c => needsFollowUp(c)).length,
+    'no-score': clients.filter(c => !hasScore(c)).length,
   };
 
   const stageColors: Record<string, string> = {
@@ -983,9 +377,10 @@ export default function ClientList() {
         </div>
         <div className="flex gap-1.5 flex-wrap">
           <FilterTab label="전체" active={filter === 'all'} count={counts.all} onClick={() => setFilter('all')} />
-          <FilterTab label="점수 미확정" active={filter === 'no-score'} count={counts['no-score']} onClick={() => setFilter('no-score')} />
+          <FilterTab label="진행 중" active={filter === 'in-progress'} count={counts['in-progress']} onClick={() => setFilter('in-progress')} />
+          <FilterTab label="취업 완료" active={filter === 'employed'} count={counts.employed} onClick={() => setFilter('employed')} />
           <FilterTab label="후속 상담" active={filter === 'follow-up'} count={counts['follow-up']} onClick={() => setFilter('follow-up')} />
-          <FilterTab label="취업처리" active={filter === 'employed'} count={counts.employed} onClick={() => setFilter('employed')} />
+          <FilterTab label="점수 미확정" active={filter === 'no-score'} count={counts['no-score']} onClick={() => setFilter('no-score')} />
         </div>
       </div>
 
