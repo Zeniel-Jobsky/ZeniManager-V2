@@ -80,7 +80,7 @@ Vite 개발 서버(포트 5181)가 시작된 후 Electron 창이 자동으로 �
 
 ## 4단계: 프로덕션 빌드
 
-### Windows (.exe NSIS 설치 파일 + Portable)
+### Windows (NSIS 설치 파일)
 
 ```bash
 # Windows에서 실행
@@ -88,8 +88,7 @@ pnpm electron:build:win
 
 # 출력 위치
 # release/{version}/
-#   ├── 상담 관리 시스템 Setup {version}.exe   ← NSIS 설치 파일
-#   └── 상담 관리 시스템 {version}.exe         ← Portable 실행 파일
+#   └── 상담 관리 시스템 Setup {version}.exe   ← NSIS 설치 파일
 ```
 
 ### macOS (.dmg + .zip)
