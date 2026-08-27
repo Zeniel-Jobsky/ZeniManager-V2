@@ -9,11 +9,10 @@ import {
   isSupabaseConfigured,
 } from './supabase';
 import type {
-  ClientRow, ClientInsert,
+  ClientRow,
   SessionRow, SessionInsert,
   CounselorRow, CounselorInsert,
-  SurveyRow, SurveyInsert,
-  MemoCardRow, MemoCardInsert,
+  SurveyRow,
 } from './supabase';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -108,24 +107,6 @@ function trimOrNull(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isMissingSchemaError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-
-  const maybeError = error as {
-    code?: string;
-    message?: string;
-  };
-
-  if (maybeError.code === 'PGRST202' || maybeError.code === 'PGRST205') {
-    return true;
-  }
-
-  const message = maybeError.message?.toLowerCase() ?? '';
-  return message.includes('schema cache') || message.includes('could not find');
-}
-
-const SESSION_META_MARKER = '\n\n[__CALENDAR_FLOW_META__]\n';
-
 // public.clients 테이블 실제 컬럼 (2026-08-26 확정, information_schema 기준)
 type LiveClientRecord = {
   id: string;
@@ -203,39 +184,6 @@ type LiveCounselHistoryRecord = {
   next_action: string | null;
   created_at: string | null;
 };
-
-function encodeSessionPayload(type: string, content: string, nextAction?: string | null): string {
-  const meta = JSON.stringify({ type, nextAction: nextAction || null });
-  return `${content}${SESSION_META_MARKER}${meta}`;
-}
-
-function decodeSessionPayload(
-  rawContent: string | null | undefined,
-  fallbackType?: string | null,
-): { content: string | null; type: string; nextAction: string | null } {
-  if (!rawContent) {
-    return { content: null, type: fallbackType || '상담기록', nextAction: null };
-  }
-
-  const markerIndex = rawContent.indexOf(SESSION_META_MARKER);
-  if (markerIndex < 0) {
-    return { content: rawContent, type: fallbackType || '상담기록', nextAction: null };
-  }
-
-  const content = rawContent.slice(0, markerIndex);
-  const metaRaw = rawContent.slice(markerIndex + SESSION_META_MARKER.length);
-
-  try {
-    const meta = JSON.parse(metaRaw) as { type?: string; nextAction?: string | null };
-    return {
-      content,
-      type: meta.type || fallbackType || '상담기록',
-      nextAction: meta.nextAction || null,
-    };
-  } catch {
-    return { content: rawContent, type: fallbackType || '상담기록', nextAction: null };
-  }
-}
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
@@ -548,18 +496,6 @@ export async function createAllowanceLog(_input: {
   throw new Error('참여수당 이력 기능은 현재 DB 스키마에서 지원되지 않습니다.');
 }
 
-export async function addCertificate(_clientId: string, _name: string, _date: string | null) {
-  throw new Error('자격증 기능은 현재 DB 스키마에서 지원되지 않습니다.');
-}
-
-export async function fetchCertificates(_clientId: string): Promise<{ certificate_name: string; acquisition_date: string | null }[]> {
-  return [];
-}
-
-export async function deleteCertificate(_clientId: string, _name: string) {
-  throw new Error('자격증 기능은 현재 DB 스키마에서 지원되지 않습니다.');
-}
-
 export async function updateSession(id: string, input: Partial<any>): Promise<void> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
 
@@ -665,57 +601,6 @@ export async function fetchCounselors(): Promise<CounselorRow[]> {
   });
 }
 
-export async function createCounselor(input: CounselorInsert): Promise<CounselorRow> {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  
-  // 1. user 테이블 등록
-  const payload = {
-    user_name: input.user_name,
-    department: input.department ?? '',
-    memo: input.memo ?? null,
-    role: input.role ?? null,
-  };
-  
-  const { data, error } = await runQuery<any>(
-    '상담사 등록',
-    sb()
-      .from('user')
-      .insert(payload)
-      .select('user_id, user_name, department, memo, role')
-      .single(),
-  );
-  if (error) throw error;
-  
-  const newUserId = (data as any).user_id;
-
-  // 2. manager_memo 테이블 등록 (데이터가 있을 때만)
-  if (input.memo_bymanager) {
-    const { data: authData } = await sb().auth.getUser();
-    const managerId = authData.user?.id;
-    
-    const { error: memoError } = await sb()
-      .from('manager_memo')
-      .insert({ 
-        manager_id: managerId || newUserId, // 매니저 권한이면 로그인한 ID, 아니면 본인 
-        counselor_id: newUserId, 
-        memo: input.memo_bymanager 
-      });
-    if (memoError) throw memoError;
-  }
-
-  return {
-    user_id: newUserId,
-    counselor_id: null,
-    user_name: (data as any).user_name ?? '이름 미상',
-    department: (data as any).department ?? '',
-    memo: (data as any).memo ?? null,
-    memo_bymanager: input.memo_bymanager ?? null,
-    role: (data as any).role != null ? normalizeAppRole((data as any).role) : null,
-    client_count: 0,
-    completed_count: 0,
-  };
-}
-
 export async function updateCounselor(userId: string, input: Partial<CounselorInsert>): Promise<CounselorRow> {
   if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
 
@@ -753,15 +638,6 @@ export async function updateCounselor(userId: string, input: Partial<CounselorIn
   return updated;
 }
 
-export async function deleteCounselor(userId: string): Promise<void> {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { error } = await runQuery<null>(
-    '상담사 삭제',
-    sb().from('user').delete().eq('user_id', userId),
-  );
-  if (error) throw error;
-}
-
 // ─── Surveys ─────────────────────────────────────────────────────────────────
 
 export async function fetchSurveys(clientId: string): Promise<SurveyRow[]> {
@@ -792,61 +668,6 @@ export async function updateSurvey(id: string, input: any): Promise<SurveyRow> {
     .single();
   if (error) throw error;
   return data;
-}
-
-// ─── Memo Cards ───────────────────────────────────────────────────────────────
-
-export async function fetchMemoCards(counselorId: string): Promise<MemoCardRow[]> {
-  if (!isSupabaseConfigured()) return [];
-  const scopedCounselorId = normalizeCounselorRowId(counselorId);
-  if (!scopedCounselorId) return [];
-
-  const { data, error } = await runQuery<MemoCardRow[]>(
-    '메모 카드 조회',
-    sb()
-      .from('memo_cards')
-      .select('*')
-      .eq('counselor_id', scopedCounselorId)
-      .order('sort_order', { ascending: true }),
-  );
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function createMemoCard(input: MemoCardInsert): Promise<MemoCardRow> {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { data, error } = await runQuery<MemoCardRow>(
-    '메모 카드 등록',
-    sb().from('memo_cards').insert(input).select().single(),
-  );
-  if (error) throw error;
-  if (!data) throw new Error('메모 카드 등록 결과가 비어 있습니다.');
-  return data;
-}
-
-export async function updateMemoCard(id: string, input: Partial<MemoCardInsert>): Promise<MemoCardRow> {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { data, error } = await runQuery<MemoCardRow>(
-    '메모 카드 수정',
-    sb()
-      .from('memo_cards')
-      .update(input)
-      .eq('id', id)
-      .select()
-      .single(),
-  );
-  if (error) throw error;
-  if (!data) throw new Error('메모 카드 수정 결과가 비어 있습니다.');
-  return data;
-}
-
-export async function deleteMemoCard(id: string): Promise<void> {
-  if (!isSupabaseConfigured()) throw new Error('Supabase 설정이 필요합니다.');
-  const { error } = await runQuery<null>(
-    '메모 카드 삭제',
-    sb().from('memo_cards').delete().eq('id', id),
-  );
-  if (error) throw error;
 }
 
 export type {
@@ -961,6 +782,3 @@ function liveCounselHistoryToSessionRow(row: LiveCounselHistoryRecord): SessionR
     created_at: parseSafeDate(row.created_at ?? row.date),
   };
 }
-
-// encodeSessionPayload 외부 노출 (ClientDetail 등에서 사용 가능)
-export { encodeSessionPayload };

@@ -3,6 +3,7 @@ import {
   buildEmbeddingText,
   clampLimit,
   createEmbedding,
+  describeError,
   isEmploymentSuccessCandidate,
   maskKoreanName,
   parseEmploymentDate,
@@ -94,7 +95,7 @@ Deno.serve(async request => {
     console.error('[sync-employment-success-case] failed', error);
     return json(
       {
-        error: error instanceof Error ? error.message : '성공사례 동기화 중 오류가 발생했습니다.',
+        error: describeError(error, '성공사례 동기화 중 오류가 발생했습니다.'),
       },
       500,
     );

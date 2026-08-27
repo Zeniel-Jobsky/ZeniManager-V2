@@ -9,14 +9,17 @@ export type ClientChatMessage = {
 };
 
 type ClientChatHistoryRow = {
-  client_id: number;
+  client_id: string;
   messages: unknown;
   updated_at?: string | null;
 };
 
-function toNumericClientId(value: string | number): number {
-  const clientId = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(clientId) || clientId <= 0) {
+// NOTE(2026-08-27): public.clients.id는 uuid 문자열이다 (예전 정수 PK 스키마의 흔적으로
+// Number() 변환을 하던 코드가 있었는데, 그러면 uuid가 항상 NaN이 되어 "유효한 client_id가
+// 필요합니다" 에러만 던지고 DB까지 요청이 가지도 못했다).
+function assertClientId(value: string | number): string {
+  const clientId = String(value).trim();
+  if (!clientId) {
     throw new Error('유효한 client_id가 필요합니다.');
   }
   return clientId;
@@ -58,7 +61,7 @@ export async function loadClientChatHistory(clientId: string | number): Promise<
     client
       .from('client_chat_history')
       .select('client_id, messages, updated_at')
-      .eq('client_id', toNumericClientId(clientId))
+      .eq('client_id', assertClientId(clientId))
       .maybeSingle(),
     { requireStoredSession: true },
   );
@@ -81,7 +84,7 @@ export async function saveClientChatHistory(
   }
 
   const payload = {
-    client_id: toNumericClientId(clientId),
+    client_id: assertClientId(clientId),
     messages: messages.map(({ id: _id, ...message }) => ({
       role: message.role,
       content: message.content.trim(),

@@ -75,27 +75,6 @@ export async function searchEmploymentSuccessCases(
   };
 }
 
-export async function backfillEmploymentSuccessCases(limit = 200): Promise<{
-  processed: number;
-  activated: number;
-  deactivated: number;
-}> {
-  const data = await invokeEmploymentEdgeFunction<Record<string, unknown>>(
-    'sync-employment-success-case',
-    {
-      backfill: true,
-      limit,
-      openAIKey: getOpenAIKey(),
-    },
-  );
-
-  return {
-    processed: typeof data?.processed === 'number' ? data.processed : 0,
-    activated: typeof data?.activated === 'number' ? data.activated : 0,
-    deactivated: typeof data?.deactivated === 'number' ? data.deactivated : 0,
-  };
-}
-
 export function maskKoreanName(name: string | null | undefined): string {
   const trimmed = normalizeText(name);
   if (!trimmed) return '익명';

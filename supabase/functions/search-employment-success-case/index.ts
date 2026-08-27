@@ -4,6 +4,7 @@ import {
   buildMatchReason,
   clampLimit,
   createEmbedding,
+  describeError,
   majorMatchLevel,
   normalizeText,
   resolveOpenAIKey,
@@ -103,7 +104,7 @@ Deno.serve(async request => {
     console.error('[search-employment-success-case] failed', error);
     return json(
       {
-        error: error instanceof Error ? error.message : '유사 취업사례 검색 중 오류가 발생했습니다.',
+        error: describeError(error, '유사 취업사례 검색 중 오류가 발생했습니다.'),
       },
       500,
     );

@@ -111,9 +111,6 @@ function AppRoutes() {
       <Route path="/clients/list">
         <GuardedRoute component={ClientList} requirement="counselor" />
       </Route>
-      <Route path="/clients/detail/:id">
-        <GuardedRoute component={ClientDetail} requirement="counselor" />
-      </Route>
       <Route path="/clients/register">
         <GuardedRoute component={ClientRegister} requirement="counselor" />
       </Route>

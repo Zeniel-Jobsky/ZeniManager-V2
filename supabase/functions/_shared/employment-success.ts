@@ -29,6 +29,28 @@ export type SearchCandidateRow = {
   similarity: number | null;
 };
 
+/**
+ * supabase-js가 던지는 PostgrestError/FunctionsError 등은 `instanceof Error`가 아닌
+ * 일반 객체({ message, details, hint, code })인 경우가 많다. `error instanceof Error`로만
+ * 분기하면 실제 원인(DB 권한 에러 등)이 fallback 문구에 가려져 디버깅이 안 되므로,
+ * message 필드를 우선 찾아보고 그래도 없으면 전체를 문자열화한다.
+ */
+export function describeError(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  if (typeof error === 'string' && error.trim()) return error;
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized && serialized !== '{}') return `${fallback} (${serialized})`;
+  } catch {
+    // 직렬화 불가능한 값이면 그냥 fallback으로 넘어간다.
+  }
+  return fallback;
+}
+
 export function normalizeText(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.replace(/\s+/g, ' ').trim();

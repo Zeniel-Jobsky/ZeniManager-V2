@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
-import { ChevronLeft, User, Phone, Mail, Calendar, Building2, Briefcase, BookOpen, Car, MapPin, Target, Home, FileText } from 'lucide-react';
+import { ChevronLeft, User, Phone, Calendar, Building2, Briefcase, BookOpen, MapPin, Target, Home, FileText } from 'lucide-react';
 import { isEmploymentCompletedStage } from '@shared/const';
 import { usePageGuard } from '@/hooks/usePageGuard';
 import { PARTICIPATION_TYPE_OPTIONS } from '@/const';
@@ -27,22 +27,16 @@ export default function ClientRegister() {
     res_id_back: '', // 뒷자리 (입력용)
     birth_date: '',
     phone: '',
-    email: '',
     age: '',
     gender: 'M',
     address_1: '',
     address_2: '',
-    has_car: false,
-    can_drive: false,
     education_level: '',
     school: '',
     major: '',
-    MBTI: '',
     businessType: '1',
     participationType: '',
     processStage: '초기상담',
-    is_working_parttime: false,
-    future_card_stat: false,
     capa: '',
     desired_job_1: '',
     desired_job_2: '',
@@ -163,8 +157,8 @@ export default function ClientRegister() {
   }, []);
 
   useEffect(() => {
-    // We only save if there is at least some data (e.g. name, phone, email, or resident id parts)
-    if (form.name || form.phone || form.email || form.res_id_front || form.res_id_back) {
+    // We only save if there is at least some data (e.g. name, phone, or resident id parts)
+    if (form.name || form.phone || form.res_id_front || form.res_id_back) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
     }
   }, [form]);
@@ -212,18 +206,14 @@ export default function ClientRegister() {
         age: form.age ? parseInt(form.age, 10) : null,
         gender: form.gender,
         phone: form.phone,
-        email: form.email, // 추가된 이메일 필드 매핑
-        has_car: form.has_car,
-        can_drive: form.can_drive,
+        address_1: form.address_1,
+        address_2: form.address_2,
         education_level: form.education_level || null,
         school: form.school || null,
         major: form.major || null,
-        MBTI: form.MBTI || null,
         business_type: form.businessType ? form.businessType : null,
         participation_type: form.participationType || null,
         participation_stage: form.processStage || null,
-        is_working_parttime: form.is_working_parttime,
-        future_card_stat: form.future_card_stat ? 1 : 0,
         capa: form.capa || null,
         desired_job_1: form.desired_job_1 || null,
         desired_job_2: form.desired_job_2 || null,
@@ -329,18 +319,6 @@ export default function ClientRegister() {
                 className="register_input"
               />
             </div>
-          </div>
-
-          {/* Row 2: Email (Full width) */}
-          <div className="register_row">
-            <label className="register_label">이메일</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={e => update('email', e.target.value)}
-              placeholder="example@email.com"
-              className="register_input"
-            />
           </div>
 
           {/* Row 3: Resident ID (Full width) */}
@@ -465,62 +443,6 @@ export default function ClientRegister() {
             </div>
           </div>
 
-          {/* Row 2: Personality & Others */}
-          <div className="register_row">
-            <div className="register_grid_3">
-              <div>
-                <label className="register_label">MBTI</label>
-                <select
-                  value={form.MBTI}
-                  onChange={e => update('MBTI', e.target.value)}
-                  className="register_input"
-                >
-                  <option value="">선택 안함</option>
-                  {['ISTJ', 'ISFJ', 'INFJ', 'INTJ', 'ISTP', 'ISFP', 'INFP', 'INTP', 'ESTP', 'ESFP', 'ENFP', 'ENTP', 'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ'].map(v => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="register_label flex items-center gap-1"><Car size={14} /> 차량/운전</label>
-                <div className="register_toggle_group">
-                  <button
-                    type="button"
-                    onClick={() => update('has_car', !form.has_car)}
-                    className={`register_toggle_btn ${form.has_car ? 'active' : ''}`}
-                  >
-                    자차 보유
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => update('can_drive', !form.can_drive)}
-                    className={`register_toggle_btn ${form.can_drive ? 'active' : ''}`}
-                  >
-                    운전 가능
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="register_label">기타 상태</label>
-                <div className="register_toggle_group">
-                  <button
-                    type="button"
-                    onClick={() => update('is_working_parttime', !form.is_working_parttime)}
-                    className={`register_toggle_btn ${form.is_working_parttime ? 'active' : ''}`}
-                  >
-                    현재 알바 중
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => update('future_card_stat', !form.future_card_stat)}
-                    className={`register_toggle_btn ${form.future_card_stat ? 'active' : ''}`}
-                  >
-                    내일배움카드
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
         </section>
 
         {/* Section 3: Job Requirements */}

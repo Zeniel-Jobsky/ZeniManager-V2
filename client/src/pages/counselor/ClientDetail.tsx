@@ -25,8 +25,6 @@ import {
   createAllowanceLog,
   fetchAllowanceLogs,
   updateAllowanceLog,
-  addCertificate,
-  deleteCertificate
 } from '@/lib/api';
 import { syncEmploymentSuccessCase } from '@/lib/employmentSuccessCase';
 import type { ClientRow, SessionRow, SurveyRow } from '@/lib/supabase';
@@ -291,9 +289,6 @@ export default function ClientDetail() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  const [editSessionContent, setEditSessionContent] = useState<string>('');
-  
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isEditingHistory, setIsEditingHistory] = useState(false);
   const [historyEditDraft, setHistoryEditDraft] = useState<Partial<SessionRow>>({});
@@ -380,26 +375,6 @@ export default function ClientDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  // NOTE(2026-08-26): 자격증 기능은 현재 DB 스키마(public.clients)에서 지원되지 않는다.
-  // addCertificate/deleteCertificate는 항상 에러를 던지도록 스텁 처리되어 있음.
-  const handleAddCert = async (name: string, date: string | null) => {
-    if (!id || !client) return;
-    try {
-      await addCertificate(id, name, date);
-    } catch (e: any) {
-      toast.error('자격증 추가 실패: ' + e.message);
-    }
-  };
-
-  const handleDeleteCert = async (name: string) => {
-    if (!id || !client) return;
-    try {
-      await deleteCertificate(id, name);
-    } catch (e: any) {
-      toast.error('자격증 삭제 실패: ' + e.message);
-    }
-  };
 
   const startEdit = (field: string, initialValue: any) => {
     setEditingField(field);
@@ -504,20 +479,6 @@ export default function ClientDetail() {
       toast.error('수정 실패: ' + e.message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleUpdateSession = async (session: SessionRow) => {
-    try {
-      await updateSession(session.id, {
-        ...session,
-        content: editSessionContent
-      });
-      setSessions(prev => prev.map(s => s.id === session.id ? { ...s, content: editSessionContent } : s));
-      toast.success('상담 이력이 수정되었습니다.');
-      setEditingSessionId(null);
-    } catch (e: any) {
-      toast.error('수정 실패: ' + e.message);
     }
   };
 
@@ -1201,9 +1162,7 @@ export default function ClientDetail() {
             {selectedSessionId ? (() => {
               const s = sessions.find(ss => ss.id === selectedSessionId);
               if (!s) return null;
-              
-              const formatTime = (t?: string | null) => t?.split(':').slice(0, 2).join(':') || '';
-              
+
               return (
                 <div className="bg-white p-6 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-200">
                   <div className="flex items-center justify-between mb-8 pb-4 border-b border-border/40">
@@ -1533,90 +1492,6 @@ function DashboardField({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function CertificationList({ 
-  value, 
-  onAdd, 
-  onDelete 
-}: { 
-  value: { certificate_name: string; acquisition_date: string | null }[] | undefined; 
-  onAdd: (name: string, date: string | null) => void;
-  onDelete: (name: string) => void;
-}) {
-  const [isAdding, setIsAdding] = useState(false);
-  const [newCert, setNewCert] = useState('');
-  const [newDate, setNewDate] = useState('');
-  const certs = value || [];
-
-  const handleAdd = () => {
-    if (newCert.trim()) {
-      onAdd(newCert.trim(), newDate || null);
-      setNewCert('');
-      setNewDate('');
-      setIsAdding(false);
-    }
-  };
-
-  return (
-    <div className="py-3 border-b border-border/30 last:border-0 hover:bg-white/50 transition-all px-2 rounded-lg relative">
-      <div className="flex items-center justify-between mb-2">
-        <label className="text-[10px] font-bold text-muted-foreground/60 flex items-center gap-1.5 uppercase tracking-tight">
-          <Award size={13} /> 자격증 목록
-        </label>
-        <button 
-          onClick={() => setIsAdding(!isAdding)} 
-          className="p-1 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-all"
-        >
-          {isAdding ? <X size={12} /> : <Plus size={12} />}
-        </button>
-      </div>
-
-      {isAdding && (
-        <div className="flex flex-col gap-2 mb-3 animate-in slide-in-from-top-1 duration-200 bg-muted/20 p-2 rounded-md">
-           <div className="flex gap-1.5">
-             <input 
-               autoFocus
-               value={newCert}
-               onChange={(e) => setNewCert(e.target.value)}
-               placeholder="자격증 명칭..."
-               className="flex-1 text-xs bg-white border border-primary px-2 py-1.5 rounded-md outline-none"
-             />
-             <input 
-               type="date"
-               value={newDate}
-               onChange={(e) => setNewDate(e.target.value)}
-               className="w-[120px] text-xs bg-white border border-primary px-2 py-1.5 rounded-md outline-none"
-             />
-             <button onClick={handleAdd} className="p-1.5 bg-primary text-white rounded-md shadow-sm">
-               <Check size={14} />
-             </button>
-           </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-1.5">
-        {certs.length === 0 ? (
-          <span className="text-xs text-muted-foreground/30 italic">추가된 자격증이 없습니다.</span>
-        ) : (
-          certs.map((cert, idx) => (
-            <div key={idx} className="flex items-center gap-1.5 bg-primary/5 border border-primary/20 px-2 py-1 rounded-md text-xs font-bold text-primary animate-in fade-in zoom-in-95 duration-200">
-              <span className="flex flex-col">
-                <span>{cert.certificate_name}</span>
-                {cert.acquisition_date && <span className="text-[9px] font-normal opacity-70">{cert.acquisition_date}</span>}
-              </span>
-              <button 
-                onClick={() => onDelete(cert.certificate_name)}
-                className="text-primary/40 hover:text-destructive transition-colors ml-1"
-              >
-                <Trash2 size={10} />
-              </button>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 }
