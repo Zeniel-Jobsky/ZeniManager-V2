@@ -1,7 +1,7 @@
 # ZeniManager — AI 기반 상담 고도화 및 표준화 시스템
 
-> **제니엘(Zeniel)** 취업 지원 사업의 상담 업무를 데이터 중심으로 표준화하기 위한 React 기반 데스크탑 앱(Electron 변환 가능) 및 웹 애플리케이션입니다.  
-> 상담 기록, 문서 분석, 유사 성공 사례, 관리자 통계까지 한 화면에서 관리하도록 설계했습니다.
+> **제니엘(Zeniel)** 취업 지원 사업의 상담 업무를 데이터 중심으로 표준화하기 위한 React 기반 웹 애플리케이션 및 Electron 데스크탑 앱입니다.  
+> 상담자 관리, 상담 기록, 문서 요약·분석, 채용공고 추천, 국취제 매뉴얼 챗봇, 관리자 통계를 하나의 업무 흐름 안에서 사용할 수 있도록 설계했습니다.
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" />
@@ -53,24 +53,26 @@ PPT의 문제 정의 파트에서는 상담 업무의 핵심 병목을 아래처
 
 ## 프로젝트 개요
 
-ZeniManager는 상담사가 남기는 비정형 상담 기록과 업로드 문서를 구조화해, 상담 품질을 표준화하고 사업 성과를 실시간으로 확인하는 것을 목표로 합니다.
+ZeniManager V2는 상담사가 남기는 비정형 상담 기록과 업로드 문서를 구조화해 상담 품질을 표준화하고, 사업 성과를 실시간으로 확인할 수 있도록 만든 상담 관리 시스템입니다.
 
 - 상담사와 관리자를 분리한 역할 기반 포털
-- HWP, PDF, Word, CSV 등 다양한 문서 입력 지원
-- AI 요약, 유사 성공 사례 탐색, 역량 분석, 추천 직무 생성
+- HWP, HWPX, PDF, Excel, CSV, TXT, 이미지 등 다양한 분석 자료 입력 지원
+- AI 요약, 유사 성공 사례 탐색, 역량 분석, 추천 직무·채용공고 생성
+- 국민취업지원제도 업무매뉴얼 기반 RAG 챗봇 제공
 - Supabase 기반 실시간 저장/조회와 RLS 보안 정책 적용
-- Electron 데스크탑 앱 또는 웹 앱으로 동일한 흐름 제공
+- 웹 앱과 Electron 데스크탑 앱에서 동일한 업무 흐름 제공
 
 ---
 
 ## 주요 기능
 
 ### 상담사 포털
+
 - **업무 대시보드**: 전체 상담자 수, 진행 현황, 완료/후속 상담, 평균 점수, 캘린더(예약/일정 관리), 메모장
 - **상담자 목록**: 검색, 필터(전체/진행 중/취업 완료/후속 상담/점수 미확정), 상세 화면 연결, 단계별 진행 관리
 - **AI 상담 지원**: 문서 요약, 핵심 강점 추출, 유사 취업 사례 검색, 추천 직무/산업 분석
-- **채용공고 추천**: 내담자 희망직종 기준으로 잡코리아·사람인·인크루트 공개 채용공고를 조건(학력/경력/지역)에 맞춰 추천 ([구현 문서](./docs/jhw/채용공고-추천-기능-구현문서.md))
-- **국취제 매뉴얼 도우미**: 국민취업지원제도 업무매뉴얼 PDF를 검색 근거로 삼는 RAG 챗봇 — 근거 페이지·신뢰도·매칭 키워드를 함께 표시 ([기능 문서](./docs/8.24~8.29/manual-rag-chatbot.md))
+- **채용공고 추천**: 상담자 희망직종을 기준으로 잡코리아·사람인·인크루트 공개 채용공고를 학력/경력/지역 조건에 맞춰 추천 ([구현 문서](./docs/jhw/채용공고-추천-기능-구현문서.md))
+- **국취제 매뉴얼 도우미**: 국민취업지원제도 업무매뉴얼 PDF를 검색 근거로 삼는 RAG 챗봇. 근거 페이지, 신뢰도, 매칭 키워드를 함께 표시 ([기능 문서](./docs/8.24~8.29/manual-rag-chatbot.md))
 - **상담자 등록**: 신규 상담자 정보 입력 폼
 - **구직준비도 설문 관리**: 8문항 설문 입력·조회·수정, 총점 자동 계산
 - **상담 챗봇**: 상담 질문 기반으로 관련 프로필과 유사 사례를 함께 참고하는 대화형 지원
@@ -309,6 +311,17 @@ Supabase 대시보드 → **Authentication** → **Users** → **Add user** 에�
 
 > 입력된 키는 기기의 `localStorage`에만 저장되며 외부로 전송되지 않습니다.
 
+### 4단계: 기능별 추가 SQL 및 Edge Function
+
+아래 기능은 기본 스키마 외에 `supabase/sql/` 또는 `manual-rag/sql/`의 추가 SQL 적용과 Edge Function 배포가 필요할 수 있습니다.
+
+- 상담 예약/일정: `supabase/sql/appointments.sql`
+- 상담 챗봇 대화 이력: `supabase/sql/client_chat_history.sql`
+- 요약 및 분석 결과 저장: `supabase/sql/client_summary_analysis.sql`
+- 채용공고 추천: `supabase/functions/recommend-job-postings/`
+- 국취제 매뉴얼 도우미: `manual-rag/`, `supabase/functions/manual-chat/`
+- 취업 성공사례 검색/동기화: `supabase/sql/employment_success_case*.sql`, `supabase/functions/search-employment-success-case/`, `supabase/functions/sync-employment-success-case/`
+
 ---
 
 ## Electron 데스크탑 빌드
@@ -354,7 +367,7 @@ Portable exe는 현재 릴리스 정책에서 제외되어 있습니다 (필요�
 ## 프로젝트 구조
 
 ```
-ZeniManager/
+ZeniManager-V2/
 ├── client/                    # 프론트엔드 (React + Vite)
 │   └── src/
 │       ├── components/        # 공통 UI 컴포넌트
@@ -412,23 +425,26 @@ ZeniManager/
 
 작업 로그([`docs/8.24~8.29/`](./docs/8.24~8.29/))와 기능 구현 문서([`docs/jhw/`](./docs/jhw/))를 기준으로 정리한 남은 과제입니다.
 
-- **관리자페이지 개발 필요**: 관리자 고객 목록의 엑셀/CSV 가져오기(임포트)가 옛 스키마 필드명을 참조해 값이 조용히 누락되는 문제, 사업 대시보드의 "프로세스 단계별 인원" 차트가 실제 참여단계 값(30여 종) 중 5개 고정 버킷만 집계하는 문제가 남아 있습니다. 자세한 내용은 [`기능테스트.md`](./docs/8.24~8.29/기능테스트.md)를 참고하세요.
+- **요약 및 분석 자료 저장 고도화**: 요약 및 분석 탭에서 업로드한 원본 파일과 분석 결과가 Supabase DB/Storage에 안정적으로 저장되어야 합니다. 저장된 파일 목록은 상세 페이지 안에서 다른 탭으로 이동했다가 돌아와도 유지되어야 하며, 새로고침 또는 재로그인 후에도 같은 상담자 기준으로 다시 불러올 수 있어야 합니다.
+- **요약 및 분석 스키마 정합성 점검**: `client_summary_analysis` 관련 SQL이 실제 운영 스키마(`public.clients`, UUID 기반 `clients.id`)와 완전히 일치하는지 확인하고, 필요한 경우 마이그레이션 SQL과 RLS 정책을 최신 스키마 기준으로 정리해야 합니다.
+- **관리자 페이지 개발 필요**: 관리자 고객 목록의 엑셀/CSV 가져오기(임포트), 상담사 관리, 관리자 메모, 사업 대시보드 집계 로직을 실제 운영 데이터 기준으로 추가 검증하고 고도화해야 합니다. 특히 임포트 필드 매핑과 "프로세스 단계별 인원" 차트가 실제 참여단계 값을 정확히 반영하는지 확인이 필요합니다. 자세한 내용은 [`기능테스트.md`](./docs/8.24~8.29/기능테스트.md)를 참고하세요.
+- **기능별 SQL 적용 상태 관리**: `appointments`, `client_chat_history`, `client_summary_analysis`, `employment_success_case`, `job_search_survey` 등 기능별 SQL이 Supabase 프로젝트에 적용되었는지 확인할 수 있는 체크리스트 또는 마이그레이션 절차가 필요합니다.
 - **다른 환경에서의 Supabase 연결 재확인**: Supabase 연결 정보는 `localStorage`에만 저장되어 Git으로 공유되지 않으므로, 새 PC/환경에서 처음 실행할 때는 반드시 설정 화면에서 프로젝트 URL·Anon Key를 다시 입력해야 합니다.
 
 ---
 
 ## 스크립트 요약
 
-| 스크립트 | 설명 |
-|----------|------|
-| `pnpm dev` | 웹 개발 서버 실행 |
-| `pnpm build` | 웹 프로덕션 빌드 |
-| `pnpm electron:ensure` | Electron 바이너리 수동 복구 |
-| `pnpm electron:dev` | Electron 개발 모드 |
-| `pnpm electron:build:win` | Windows NSIS 설치 파일(Setup.exe) 빌드 |
-| `pnpm electron:build:mac` | macOS DMG 빌드 |
-| `pnpm electron:build:linux` | Linux AppImage 빌드 |
-| `pnpm test` | 단위 테스트 실행 |
+| 스크립트                    | 설명                                   |
+| --------------------------- | -------------------------------------- |
+| `pnpm dev`                  | 웹 개발 서버 실행                      |
+| `pnpm build`                | 웹 프로덕션 빌드                       |
+| `pnpm electron:ensure`      | Electron 바이너리 수동 복구            |
+| `pnpm electron:dev`         | Electron 개발 모드                     |
+| `pnpm electron:build:win`   | Windows NSIS 설치 파일(Setup.exe) 빌드 |
+| `pnpm electron:build:mac`   | macOS DMG 빌드                         |
+| `pnpm electron:build:linux` | Linux AppImage 빌드                    |
+| `pnpm test`                 | 단위 테스트 실행                       |
 
 ---
 
