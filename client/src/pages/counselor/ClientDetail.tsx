@@ -28,6 +28,10 @@ import {
   updateAllowanceLog,
 } from '@/lib/api';
 import { syncEmploymentSuccessCase } from '@/lib/employmentSuccessCase';
+import {
+  calculateClientReadinessScore,
+  type ClientReadinessScore,
+} from '@/lib/clientReadinessScore';
 import type { ClientRow, SessionRow, SurveyRow } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import DaumPostcode from 'react-daum-postcode';
@@ -269,6 +273,8 @@ export default function ClientDetail() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [readinessScoring, setReadinessScoring] = useState<ClientReadinessScore | null>(null);
+  const [readinessScoreLoading, setReadinessScoreLoading] = useState(false);
   const [businessCodes, setBusinessCodes] = useState<{ value: string; label: string }[]>([]);
   const [allowanceLogs, setAllowanceLogs] = useState<any[]>([]);
   const [isAddingAllowance, setIsAddingAllowance] = useState(false);
@@ -370,6 +376,69 @@ export default function ClientDetail() {
   useEffect(() => {
     if (activeTab === 'history') loadSessions();
   }, [activeTab, loadSessions]);
+
+  useEffect(() => {
+    if (!id || !client) return;
+
+    let cancelled = false;
+    const currentClient = client;
+
+    const refreshReadinessScore = async () => {
+      setReadinessScoreLoading(true);
+      try {
+        const [scoreSessions, scoreSurveys] = await Promise.all([
+          fetchSessions(id),
+          fetchSurveys(id),
+        ]);
+        if (cancelled) return;
+
+        const nextScore = calculateClientReadinessScore(
+          currentClient,
+          scoreSessions,
+          scoreSurveys,
+        );
+        setReadinessScoring(nextScore);
+        setSessions(scoreSessions);
+
+        if (currentClient.score !== nextScore.score) {
+          const updated = await updateClient(id, { score: nextScore.score });
+          if (!cancelled) {
+            setClient(prev => prev
+              ? { ...prev, score: updated.score, updated_at: updated.updated_at }
+              : prev
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Failed to calculate client readiness score:', error);
+      } finally {
+        if (!cancelled) setReadinessScoreLoading(false);
+      }
+    };
+
+    void refreshReadinessScore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    id,
+    activeTab,
+    client?.participation_stage,
+    client?.desired_job,
+    client?.iap_date,
+    client?.initial_counsel_date,
+    client?.counsel_notes,
+    client?.last_counsel_date,
+    client?.rediagnosis_date,
+    client?.rediagnosis_yn,
+    client?.iap_duration,
+    client?.allowance_apply_date,
+    client?.training_name,
+    client?.work_exp_company,
+    client?.work_exp_type,
+    client?.work_exp_completed,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -998,7 +1067,48 @@ export default function ClientDetail() {
                       ]}
                   />
                 </div>
-                <DashboardField label="보유점수" field="retest_score" value={client.rediagnosis_yn ? `${client.rediagnosis_yn}점` : '-'} onEdit={startEdit} editingField={editingField} editValue={editValue} setEditValue={setEditValue} onConfirm={handleUpdateField} onCancel={cancelEdit} highlight />
+                <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        구직준비도 점수
+                      </div>
+                      <div className="mt-1 flex items-end gap-2">
+                        <span className="text-3xl font-bold text-primary">
+                          {readinessScoreLoading && !readinessScoring
+                            ? '...'
+                            : `${readinessScoring?.score ?? client.score ?? '-'}점`}
+                        </span>
+                        {readinessScoring && (
+                          <span className="mb-1 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-primary shadow-sm">
+                            {readinessScoring.grade} · {readinessScoring.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {readinessScoreLoading && (
+                      <Loader2 size={16} className="animate-spin text-primary" />
+                    )}
+                  </div>
+
+                  {readinessScoring && (
+                    <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-primary/10 pt-3">
+                      {readinessScoring.breakdown.map(item => (
+                        <div key={item.key} className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="truncate text-muted-foreground">{item.label}</span>
+                          <span className="shrink-0 font-bold text-foreground">
+                            {item.score}/{item.max}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
+                    기본정보·관리현황·구직준비도·상담이력을 자동 분석합니다.
+                    성별·나이·주소와 업로드 분석자료는 이 점수에 반영하지 않습니다.
+                  </p>
+                </div>
               </div>
 
               {/* Column 3.5: Allowance Log */}
