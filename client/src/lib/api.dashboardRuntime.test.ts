@@ -272,11 +272,11 @@ describe('dashboard runtime APIs', () => {
       clients: {
         select: {
           data: [
-            { participation_stage: '초기상담', score: null, retention_1m_yn: null },
+            { participation_stage: '초기상담', score: null, retention_1m_yn: null, follow_up: true },
             { participation_stage: '취업지원', score: 65, retention_1m_yn: null },
             { participation_stage: '취업완료', score: 72, retention_1m_yn: 'Y' },
-            { participation_stage: '취업완료', score: 88, retention_1m_yn: 'N' },
-            { participation_stage: '사후관리', score: 91, retention_1m_yn: null },
+            { participation_stage: '취업완료', score: 88, retention_1m_yn: 'N', follow_up: false },
+            { participation_stage: '사후관리', score: 91, retention_1m_yn: null, follow_up: true },
           ],
           error: null,
         },
@@ -287,7 +287,7 @@ describe('dashboard runtime APIs', () => {
       totalClients: 5,
       inProgress: 3,
       employed: 2,
-      followUpNeeded: 1,
+      followUpNeeded: 3,
       averageScore: 79,
       scoredClients: 4,
       unscoredClients: 1,
