@@ -19,6 +19,9 @@ const path = require("path");
 const zlib = require("zlib");
 const XLSX = require("xlsx");
 const isDev = !app.isPackaged;
+const { createUpdates } = require("./updates.cjs");
+const updates = createUpdates({ app, dialog, updater: app.isPackaged && process.platform === "win32"
+  ? require("electron-updater").autoUpdater : null });
 
 // electron/main.cjs 최상단 부근에 Supabase 클라이언트 세팅 추가
 const { createClient } = require("@supabase/supabase-js");
@@ -534,6 +537,7 @@ function buildMenu() {
     {
       label: "도움말",
       submenu: [
+        { label: "업데이트 확인", click: () => void updates.check(true) },
         {
           label: `버전 ${APP_VERSION}`,
           enabled: false,
@@ -855,6 +859,7 @@ ipcMain.handle("admin-delete-counselor", async (event, payload) => {
 app.whenReady().then(() => {
   buildMenu();
   createWindow();
+  updates.start();
 
   // macOS: re-create window when dock icon is clicked
   app.on("activate", () => {

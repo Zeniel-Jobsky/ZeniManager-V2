@@ -44,6 +44,9 @@ jobs:
           "tag=$($release.tag)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "existing_tag=$($release.existingTag.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      - name: Verify update controls
+        run: node --test electron/updates.test.cjs
+
       - name: Build Windows executable
         run: pnpm electron:build:win
 
@@ -63,5 +66,8 @@ jobs:
           name: ${{ steps.release_version.outputs.tag }}
           draft: false
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             release/${{ steps.release_version.outputs.version }}/*.exe
+            release/${{ steps.release_version.outputs.version }}/*.blockmap
+            release/${{ steps.release_version.outputs.version }}/latest.yml

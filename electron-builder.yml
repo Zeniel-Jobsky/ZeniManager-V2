@@ -16,6 +16,7 @@ directories:
 files:
   - dist/**/*
   - electron/**/*
+  - "!electron/**/*.test.cjs"
   - package.json
 
 # ─── Extra resources (icons, etc.) ───────────────────────────────────────────
@@ -63,6 +64,7 @@ dmg:
 
 # ─── Windows Configuration ────────────────────────────────────────────────────
 win:
+  artifactName: ZeniManager-Setup-${version}.${ext}
   executableName: ZeniManager
   icon: electron/icons/zeniel-logo.ico
   target:
@@ -88,13 +90,12 @@ linux:
       arch:
         - x64
 
-# ─── Auto-update (GitHub Releases) ───────────────────────────────────────────
-# Uncomment and configure when ready for auto-updates:
-# publish:
-#   provider: github
-#   owner: your-github-username
-#   repo: counsel-admin-v2
-#   private: true
+# ─── Windows auto-update (public GitHub Releases) ────────────────────────────
+publish:
+  provider: github
+  owner: Zeniel-Jobsky
+  repo: ZeniManager-V2
+  private: false
 
 # ─── Build options ────────────────────────────────────────────────────────────
 compression: maximum
