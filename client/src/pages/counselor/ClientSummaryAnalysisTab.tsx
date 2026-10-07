@@ -1,3 +1,4 @@
+import { CounselingAnalysisPanel } from "./CounselingAnalysisPanel";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -54,6 +55,7 @@ type UploadItem = {
 };
 
 export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
+  const [analysisRevision, setAnalysisRevision] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [items, setItems] = useState<UploadItem[]>([]);
@@ -381,6 +383,7 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
         clientId: client.id,
       });
 
+      setAnalysisRevision(value => value + 1);
       toast.success("요약 및 분석 데이터를 저장했습니다.");
     } catch (error) {
       console.error("summaryAnalysis save failed", error);
@@ -401,6 +404,7 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
 
   return (
     <div className="space-y-6">
+      <CounselingAnalysisPanel key={client.id} clientId={client.id} revision={analysisRevision} />
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div
           onDragOver={event => {
@@ -433,7 +437,7 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
               </h3>
               <p className="text-sm leading-6 text-muted-foreground">
                 드래그 앤 드롭 또는 직접 선택으로 문서를 추가하면 텍스트를
-                추출해 AI 요약, 희망 직업, 자격증, 부가 스펙, 추천 직종을
+                추출해 문서 요약, 희망 직업, 자격증, 부가 스펙, 추천 직종을
                 정리합니다.
               </p>
             </div>
@@ -604,7 +608,7 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
       {hasAnalysisContent && (
         <section className="grid gap-4 xl:grid-cols-2">
           <AnalysisCard
-            title="AI 요약"
+            title="문서 추출정보 요약"
             icon={<Sparkles size={16} style={{ color: PRIMARY }} />}
             value={structuredJson?.sourceSummary || mergedProfile?.aiSummary || "?? ??"}
             multiline
@@ -651,8 +655,8 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
 
       {competencyScoring && (
         <section className="grid gap-4 xl:grid-cols-2">
-          <ScoreCard title="평가 점수" value={`${competencyScoring.score}점`} />
-          <ScoreCard title="최종 역량 등급" value={competencyScoring.grade} />
+          <ScoreCard title="학력·자격 참고점수" value={`${competencyScoring.score}점`} />
+          <ScoreCard title="학력·자격 참고등급" value={competencyScoring.grade} />
         </section>
       )}
 
