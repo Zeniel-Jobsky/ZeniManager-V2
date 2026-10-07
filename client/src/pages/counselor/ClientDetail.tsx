@@ -371,7 +371,7 @@ export default function ClientDetail() {
       setActiveTab(requestedTab);
     }
     if (params.has('tab') || params.has('date')) {
-      window.history.replaceState({}, '', window.location.pathname);
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
