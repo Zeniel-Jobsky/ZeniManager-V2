@@ -8,9 +8,9 @@ import {
 describe("summaryAnalysisStore normalization", () => {
   it("recomputes stale saved competency scoring from structured_json", () => {
     const saved = {
-      client_id: 30,
+      client_id: "02e285cd-3443-4636-8d08-0154d9f7c4e7",
       structured_json: {
-        clientId: "30",
+        clientId: "02e285cd-3443-4636-8d08-0154d9f7c4e7",
         desiredJobs: ["개발자"],
         qualifications: ["정보처리기사", "정보통신기사"],
         certifications: ["정보처리기사", "정보통신기사"],

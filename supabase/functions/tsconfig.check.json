@@ -3,6 +3,8 @@
   "include": [
     "deno-shim.d.ts",
     "manual-chat/**/*.ts",
+    "analyze-client-counseling/**/*.ts",
+    "_shared/counseling-analysis.ts",
     "recommend-job-postings/**/*.ts",
     "_shared/job-postings/**/*.ts"
   ],

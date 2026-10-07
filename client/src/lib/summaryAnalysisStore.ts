@@ -27,7 +27,7 @@ function buildSafeStorageFileName(originalName: string): string {
 }
 
 export interface StoredSummaryAnalysis {
-  client_id: number;
+  client_id: string;
   structured_json: StructuredSummaryJson;
   competency_scoring: CompetencyScoring;
   recommendation: RecommendationResult;
@@ -107,7 +107,7 @@ export async function fetchClientSummaryAnalysis(
       .select(
         "client_id, structured_json, competency_scoring, recommendation, prompt_snapshot, file_refs, updated_at"
       )
-      .eq("client_id", Number(clientId))
+      .eq("client_id", clientId)
       .maybeSingle(),
     "요약/분석 데이터를 불러오는 응답이 지연되고 있습니다."
   );
@@ -163,7 +163,7 @@ export async function upsertClientSummaryAnalysis(input: {
   }
 
   const payload: Record<string, unknown> = {
-    client_id: Number(input.clientId),
+    client_id: input.clientId,
     updated_at: new Date().toISOString(),
   };
 

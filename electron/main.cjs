@@ -713,8 +713,8 @@ ipcMain.handle("summary-analysis:save", async (_, payload) => {
       );
     }
 
-    const clientId = Number(payload?.clientId);
-    if (!Number.isFinite(clientId)) {
+    const clientId = typeof payload?.clientId === "string" ? payload.clientId.trim() : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) {
       throw new Error("저장할 clientId가 올바르지 않습니다.");
     }
 
