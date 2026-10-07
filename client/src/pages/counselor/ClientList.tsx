@@ -285,13 +285,13 @@ export default function ClientList() {
 
     navigate(`/clients/detail/${clientId}${suffix}`);
     deepLinkHandledRef.current = true;
-    window.history.replaceState({}, '', window.location.pathname);
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash);
   }, [clients, loading, navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (!params.has('filter')) return;
-    window.history.replaceState({}, '', window.location.pathname);
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash);
   }, []);
 
   const filtered = clients.filter(c => {
