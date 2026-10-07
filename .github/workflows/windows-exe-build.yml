@@ -50,6 +50,14 @@ jobs:
       - name: Build Windows executable
         run: pnpm electron:build:win
 
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeniManager-Setup-${{ steps.release_version.outputs.version }}
+          path: release/${{ steps.release_version.outputs.version }}/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Create release tag
         if: steps.release_version.outputs.existing_tag != 'true'
         shell: pwsh
