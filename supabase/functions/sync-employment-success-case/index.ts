@@ -17,6 +17,7 @@ type RequestBody = {
   clientId?: string;
   backfill?: boolean;
   limit?: number;
+  offset?: number;
   openAIKey?: string;
 };
 
@@ -51,25 +52,32 @@ Deno.serve(async request => {
     const body = await readBody(request);
 
     if (body.backfill) {
-      const limit = clampLimit(body.limit, 100, 500);
-      const clients = await fetchBackfillClients(admin, limit);
-      const apiKey = clients.length > 0 ? resolveOpenAIKey(body.openAIKey) : null;
+      const limit = clampLimit(body.limit, 50, 100);
+      const offset = normalizeOffset(body.offset);
+      const clients = await fetchBackfillClients(admin, limit, offset);
+      const eligibleClients = clients.filter(isEmploymentSuccessCandidate);
+      const apiKey = eligibleClients.length > 0 ? resolveOpenAIKey(body.openAIKey) : null;
 
       let activated = 0;
-      let deactivated = 0;
 
-      for (const client of clients) {
+      for (const client of eligibleClients) {
         const result = await syncOneClient(admin, client, apiKey);
         if (result.status === 'activated') activated += 1;
-        if (result.status === 'deactivated') deactivated += 1;
       }
 
-      console.log('[sync-employment-success-case] backfill', { processed: clients.length, activated, deactivated });
+      console.log('[sync-employment-success-case] backfill', {
+        offset,
+        processed: clients.length,
+        eligible: eligibleClients.length,
+        activated,
+      });
 
       return json({
+        offset,
         processed: clients.length,
+        eligible: eligibleClients.length,
         activated,
-        deactivated,
+        nextOffset: clients.length === limit ? offset + limit : null,
       });
     }
 
@@ -144,17 +152,23 @@ async function fetchClientById(
 async function fetchBackfillClients(
   admin: ReturnType<typeof createClient>,
   limit: number,
+  offset: number,
 ): Promise<EmploymentSourceRow[]> {
   const { data, error } = await admin
     .from('clients')
     .select(CLIENT_SELECT_FIELDS)
-    .eq('participation_stage', '취업완료')
     .not('employer', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .order('id', { ascending: true })
+    .range(offset, offset + limit - 1);
 
   if (error) throw error;
   return (data ?? []) as EmploymentSourceRow[];
+}
+
+function normalizeOffset(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
 }
 
 async function syncOneClient(
