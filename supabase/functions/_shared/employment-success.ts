@@ -82,8 +82,28 @@ export function parseEmploymentDate(value: string | null | undefined): string | 
   return normalizeDate(value);
 }
 
+export function isEmploymentSuccessStage(value: string | null | undefined): boolean {
+  const normalized = normalizeText(value)?.replace(/\s+/g, '').toLowerCase();
+  if (!normalized) return false;
+
+  // 실제 운영 데이터의 취업 상태는 "취업완료" 한 종류로 고정되어 있지 않다.
+  // "취업", "사후관리취업", "기간만료후취업", "취업(일본)" 등 실제 취업 상태를
+  // 모두 인정하되 "취업지원" 같은 진행단계는 제외한다.
+  if (
+    normalized === '취업' ||
+    normalized === '취업완료' ||
+    normalized.endsWith('취업') ||
+    normalized.startsWith('취업(')
+  ) {
+    return normalized !== '취업지원';
+  }
+
+  // 회사명이 함께 있는 경우 실질적인 취업 성공으로 취급하는 운영상 예외 상태.
+  return ['파견', '공무원합격', '창업'].includes(normalized);
+}
+
 export function isEmploymentSuccessCandidate(row: EmploymentSourceRow): boolean {
-  return normalizeText(row.participation_stage) === '취업완료' && Boolean(normalizeText(row.employer));
+  return isEmploymentSuccessStage(row.participation_stage) && Boolean(normalizeText(row.employer));
 }
 
 export function buildEmbeddingText(
