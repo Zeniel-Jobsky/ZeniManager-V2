@@ -1,5 +1,6 @@
 create table if not exists public.client_summary_analysis (
-  client_id uuid primary key references public.clients(id) on delete cascade,
+  id bigint generated always as identity primary key,
+  client_id integer not null unique references public.client(client_id) on delete cascade,
   structured_json jsonb not null default '{}'::jsonb,
   competency_scoring jsonb not null default '{}'::jsonb,
   recommendation jsonb not null default '{}'::jsonb,
@@ -12,26 +13,48 @@ create table if not exists public.client_summary_analysis (
 alter table public.client_summary_analysis
   add column if not exists file_refs jsonb not null default '[]'::jsonb;
 
+create index if not exists idx_client_summary_analysis_client_id
+  on public.client_summary_analysis(client_id);
+
 alter table public.client_summary_analysis enable row level security;
 
-drop policy if exists summary_assigned
-on public.client_summary_analysis;
+drop policy if exists client_summary_analysis_select_self_or_admin on public.client_summary_analysis;
+create policy client_summary_analysis_select_self_or_admin
+on public.client_summary_analysis
+for select
+using (
+  exists (
+    select 1
+    from public.client c
+    where c.client_id = client_summary_analysis.client_id
+      and (
+        c.counselor_id = auth.uid()
+        or exists (
+          select 1
+          from public."user" u
+          where u.user_id = auth.uid()
+            and u.role = 4
+        )
+      )
+  )
+);
 
-create policy summary_assigned
+drop policy if exists client_summary_analysis_upsert_self_or_admin on public.client_summary_analysis;
+create policy client_summary_analysis_upsert_self_or_admin
 on public.client_summary_analysis
 for all
 using (
   exists (
     select 1
-    from public.clients c
-    where c.id = client_summary_analysis.client_id
+    from public.client c
+    where c.client_id = client_summary_analysis.client_id
       and (
-        (select public.is_current_user_admin())
+        c.counselor_id = auth.uid()
         or exists (
           select 1
-          from public.counselors co
-          where co.id = c.counselor_id
-            and co.auth_user_id = (select auth.uid())
+          from public."user" u
+          where u.user_id = auth.uid()
+            and u.role = 4
         )
       )
   )
@@ -39,15 +62,15 @@ using (
 with check (
   exists (
     select 1
-    from public.clients c
-    where c.id = client_summary_analysis.client_id
+    from public.client c
+    where c.client_id = client_summary_analysis.client_id
       and (
-        (select public.is_current_user_admin())
+        c.counselor_id = auth.uid()
         or exists (
           select 1
-          from public.counselors co
-          where co.id = c.counselor_id
-            and co.auth_user_id = (select auth.uid())
+          from public."user" u
+          where u.user_id = auth.uid()
+            and u.role = 4
         )
       )
   )
