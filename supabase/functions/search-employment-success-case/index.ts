@@ -5,7 +5,9 @@ import {
   clampLimit,
   createEmbedding,
   describeError,
+  isEmploymentSuccessCandidate,
   majorMatchLevel,
+  maskKoreanName,
   normalizeText,
   resolveOpenAIKey,
   toAgeDecade,
@@ -75,30 +77,57 @@ Deno.serve(async request => {
       return json({ error: '상담자 데이터를 찾을 수 없습니다.' }, 404);
     }
 
-    const apiKey = resolveOpenAIKey(body.openAIKey);
     const limit = clampLimit(body.limit, 3, 10);
-    const queryText = buildEmbeddingText(sourceClient, { includeEmployment: false });
-    const queryEmbedding = await createEmbedding(apiKey, queryText);
 
-    const { data, error } = await admin.rpc('match_employment_success_case', {
-      query_embedding_text: vectorLiteral(queryEmbedding),
-      match_count: Math.max(limit * 3, 10),
-      exclude_client_id: body.clientId,
-    });
+    // 1차: 임베딩 인덱스가 준비되어 있으면 기존 벡터 검색을 사용한다.
+    // 인덱스가 비어 있거나 임베딩 호출에 실패하더라도 상담 기능 자체가 멈추지 않도록
+    // 실제 clients 취업 데이터를 이용한 구조화 유사도 검색으로 자동 전환한다.
+    try {
+      const apiKey = resolveOpenAIKey(body.openAIKey);
+      const queryText = buildEmbeddingText(sourceClient, { includeEmployment: false });
+      const queryEmbedding = await createEmbedding(apiKey, queryText);
 
-    if (error) throw error;
+      const { data, error } = await admin.rpc('match_employment_success_case', {
+        query_embedding_text: vectorLiteral(queryEmbedding),
+        match_count: Math.max(limit * 3, 10),
+        exclude_client_id: body.clientId,
+      });
 
-    const reranked = ((data ?? []) as SearchCandidateRow[])
-      .map(candidate => rerankCandidate(sourceClient, candidate))
+      if (error) throw error;
+
+      if (Array.isArray(data) && data.length > 0) {
+        const reranked = (data as SearchCandidateRow[])
+          .map(candidate => rerankCandidate(sourceClient, candidate))
+          .sort((left, right) => right.rerankScore - left.rerankScore);
+
+        const ranked = preferSameAgeDecadeResults(sourceClient, reranked, limit);
+
+        return json({
+          summary: buildSummary(ranked),
+          results: ranked,
+          evaluatedCount: data.length,
+          reason: ranked.length > 0 ? null : 'NO_MATCH',
+        });
+      }
+    } catch (vectorError) {
+      console.warn('[search-employment-success-case] vector search unavailable; using structured fallback', {
+        error: describeError(vectorError, 'vector search unavailable'),
+      });
+    }
+
+    // 2차: 과거 데이터가 아직 embedding 테이블에 동기화되지 않은 경우의 안전한 fallback.
+    const fallbackCandidates = await fetchStructuredSuccessCandidates(admin, body.clientId);
+    const fallbackRanked = fallbackCandidates
+      .map(candidate => rankStructuredCandidate(sourceClient, candidate))
       .sort((left, right) => right.rerankScore - left.rerankScore);
 
-    const ranked = preferSameAgeDecadeResults(sourceClient, reranked, limit);
+    const ranked = preferSameAgeDecadeResults(sourceClient, fallbackRanked, limit);
 
     return json({
       summary: buildSummary(ranked),
       results: ranked,
-      evaluatedCount: Array.isArray(data) ? data.length : 0,
-      reason: ranked.length > 0 ? null : 'NO_MATCH',
+      evaluatedCount: fallbackCandidates.length,
+      reason: ranked.length > 0 ? 'STRUCTURED_FALLBACK' : 'NO_MATCH',
     });
   } catch (error) {
     console.error('[search-employment-success-case] failed', error);
@@ -148,6 +177,100 @@ async function fetchClientById(
 
   if (error) throw error;
   return (data as EmploymentSourceRow | null) ?? null;
+}
+
+async function fetchStructuredSuccessCandidates(
+  admin: ReturnType<typeof createClient>,
+  excludeClientId: string,
+): Promise<EmploymentSourceRow[]> {
+  const { data, error } = await admin
+    .from('clients')
+    .select(CLIENT_SELECT_FIELDS)
+    .not('employer', 'is', null)
+    .neq('id', excludeClientId)
+    .order('created_at', { ascending: false })
+    .limit(1000);
+
+  if (error) throw error;
+
+  return ((data ?? []) as EmploymentSourceRow[])
+    .filter(isEmploymentSuccessCandidate);
+}
+
+function rankStructuredCandidate(
+  source: EmploymentSourceRow,
+  candidate: EmploymentSourceRow,
+): SearchResult {
+  const sourceAgeDecade = toAgeDecade(source.age);
+  const candidateAgeDecade = toAgeDecade(candidate.age);
+  const sourceEducation = normalizeText(source.education_level);
+  const candidateEducation = normalizeText(candidate.education_level);
+  const sourceMajor = normalizeText(source.major);
+  const candidateMajor = normalizeText(candidate.major);
+
+  const ageMatched =
+    sourceAgeDecade !== '연령 미상' &&
+    sourceAgeDecade === candidateAgeDecade;
+  const educationMatched = Boolean(
+    sourceEducation &&
+    candidateEducation &&
+    sourceEducation === candidateEducation
+  );
+  const majorLevel = majorMatchLevel(sourceMajor, candidateMajor);
+  const jobLevel = jobMatchLevel(
+    source.desired_job,
+    candidate.desired_job,
+    candidate.job_title,
+  );
+
+  const ageScore = ageMatched ? 20 : 0;
+  const educationScore = educationMatched ? 20 : 0;
+  const majorScore = majorLevel === 'exact' ? 20 : majorLevel === 'partial' ? 10 : 0;
+  const jobScore = jobLevel === 'exact' ? 40 : jobLevel === 'partial' ? 25 : 0;
+  const rerankScore = ageScore + educationScore + majorScore + jobScore;
+
+  const reasons: string[] = [];
+  if (jobLevel === 'exact') reasons.push('희망직무·취업직무 일치');
+  else if (jobLevel === 'partial') reasons.push('희망직무·취업직무 유사');
+  if (ageMatched) reasons.push('연령대 일치');
+  if (educationMatched) reasons.push('학력 일치');
+  if (majorLevel === 'exact') reasons.push('전공 일치');
+  else if (majorLevel === 'partial') reasons.push('전공 유사');
+
+  return {
+    id: candidate.id,
+    sourceClientId: candidate.id,
+    maskedClientName: maskKoreanName(candidate.name),
+    ageDecade: candidateAgeDecade,
+    educationLevel: candidate.education_level,
+    major: candidate.major,
+    employmentCompany: normalizeText(candidate.employer) ?? '-',
+    employmentType: candidate.employment_type,
+    employmentJobType: candidate.job_title,
+    employmentDate: candidate.employment_date,
+    similarity: rerankScore / 100,
+    rerankScore,
+    matchReason: reasons.length > 0
+      ? reasons.join(' · ')
+      : '취업 완료 이력 보유 사례',
+  };
+}
+
+function jobMatchLevel(
+  sourceDesiredJob: string | null | undefined,
+  candidateDesiredJob: string | null | undefined,
+  candidateEmploymentJob: string | null | undefined,
+): 'exact' | 'partial' | 'none' {
+  const source = normalizeText(sourceDesiredJob)?.toLowerCase();
+  if (!source) return 'none';
+
+  const candidates = [candidateDesiredJob, candidateEmploymentJob]
+    .map(value => normalizeText(value)?.toLowerCase())
+    .filter((value): value is string => Boolean(value));
+
+  if (candidates.some(value => value === source)) return 'exact';
+  if (candidates.some(value => value.includes(source) || source.includes(value))) return 'partial';
+  return 'none';
 }
 
 function rerankCandidate(source: EmploymentSourceRow, candidate: SearchCandidateRow): SearchResult {
