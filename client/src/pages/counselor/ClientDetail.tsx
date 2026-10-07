@@ -426,6 +426,11 @@ export default function ClientDetail() {
     activeTab,
     client?.participation_stage,
     client?.desired_job,
+    client?.competency_grade,
+    client?.education_level,
+    client?.school,
+    client?.major,
+    client?.recognition_date,
     client?.iap_date,
     client?.initial_counsel_date,
     client?.counsel_notes,
@@ -438,6 +443,12 @@ export default function ClientDetail() {
     client?.work_exp_company,
     client?.work_exp_type,
     client?.work_exp_completed,
+    client?.intensive_start,
+    client?.intensive_end,
+    client?.support_end_date,
+    client?.employer,
+    client?.job_title,
+    client?.employment_date,
   ]);
 
   useEffect(() => {
@@ -1071,7 +1082,7 @@ export default function ClientDetail() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                        구직준비도 점수
+                        관리·구직 종합점수
                       </div>
                       <div className="mt-1 flex items-end gap-2">
                         <span className="text-3xl font-bold text-primary">
@@ -1105,7 +1116,7 @@ export default function ClientDetail() {
                   )}
 
                   <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
-                    기본정보·관리현황·구직준비도·상담이력을 자동 분석합니다.
+                    기본정보·관리현황·상담·구직활동을 종합해 자동 계산합니다.
                     성별·나이·주소와 업로드 분석자료는 이 점수에 반영하지 않습니다.
                   </p>
                 </div>
