@@ -17,6 +17,7 @@ import {
   updateClient, 
   fetchBusinessCodes,
   fetchSessions,
+  createSession,
   deleteSession,
   fetchSurveys, 
   createSurvey,
@@ -292,6 +293,13 @@ export default function ClientDetail() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isEditingHistory, setIsEditingHistory] = useState(false);
   const [historyEditDraft, setHistoryEditDraft] = useState<Partial<SessionRow>>({});
+  const [isAddingSession, setIsAddingSession] = useState(false);
+  const [newSession, setNewSession] = useState({
+    date: new Date().toISOString().split('T')[0],
+    type: '일반상담',
+    content: '',
+    next_action: '',
+  });
   
   // Allowance log specific editing states
   const [editingLogId, setEditingLogId] = useState<number | null>(null);
@@ -565,6 +573,46 @@ export default function ClientDetail() {
     setIsEditingHistory(false);
   };
 
+  const handleCreateSession = async () => {
+    if (!id) return;
+    if (!newSession.content.trim()) {
+      toast.error('상담 내용을 입력해주세요.');
+      return;
+    }
+
+    const counselorId = user?.counselorId || user?.id;
+    if (!counselorId) {
+      toast.error('로그인한 상담사 정보를 확인할 수 없습니다.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await createSession({
+        client_id: id,
+        counselor_id: counselorId,
+        date: newSession.date,
+        type: newSession.type || '일반상담',
+        content: newSession.content.trim(),
+        next_action: newSession.next_action.trim() || null,
+      });
+      await loadSessions();
+      setNewSession({
+        date: new Date().toISOString().split('T')[0],
+        type: '일반상담',
+        content: '',
+        next_action: '',
+      });
+      setIsAddingSession(false);
+      setSelectedSessionId(null);
+      toast.success('상담이 등록되었습니다.');
+    } catch (e: any) {
+      toast.error('상담 등록 실패: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDeleteSession = async (sid: string) => {
     if (!confirm('삭제하시겠습니까?')) return;
     try {
@@ -617,7 +665,117 @@ export default function ClientDetail() {
             </p>
           </div>
         </div>
+
+        {activeTab === 'history' && (
+          <button
+            type="button"
+            onClick={() => setIsAddingSession(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-all shadow-sm"
+          >
+            <Plus size={16} />
+            상담 등록
+          </button>
+        )}
       </div>
+
+      {isAddingSession && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !saving && setIsAddingSession(false)}
+        >
+          <div
+            className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-border overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
+              <div>
+                <h2 className="text-lg font-bold">상담 등록</h2>
+                <p className="text-xs text-muted-foreground mt-1">{client.name} 상담이력에 새 기록을 추가합니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !saving && setIsAddingSession(false)}
+                className="p-2 hover:bg-muted rounded-full transition-colors"
+                aria-label="닫기"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="space-y-2">
+                  <span className="text-xs font-bold text-muted-foreground">상담일자</span>
+                  <input
+                    type="date"
+                    value={newSession.date}
+                    onChange={(e) => setNewSession(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full px-3 py-2.5 text-sm border border-input rounded-lg bg-background outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-bold text-muted-foreground">상담유형</span>
+                  <select
+                    value={newSession.type}
+                    onChange={(e) => setNewSession(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full px-3 py-2.5 text-sm border border-input rounded-lg bg-background outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary"
+                  >
+                    <option value="초기상담">초기상담</option>
+                    <option value="심층상담">심층상담</option>
+                    <option value="취업지원">취업지원</option>
+                    <option value="취업상담">취업상담</option>
+                    <option value="사후상담">사후상담</option>
+                    <option value="일반상담">일반상담</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="block space-y-2">
+                <span className="text-xs font-bold text-muted-foreground">상담내용 <span className="text-destructive">*</span></span>
+                <textarea
+                  autoFocus
+                  value={newSession.content}
+                  onChange={(e) => setNewSession(prev => ({ ...prev, content: e.target.value }))}
+                  rows={7}
+                  placeholder="상담한 내용을 입력하세요."
+                  className="w-full px-3 py-3 text-sm border border-input rounded-lg bg-background outline-none resize-none focus:ring-2 focus:ring-primary/10 focus:border-primary"
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-xs font-bold text-muted-foreground">다음 조치사항</span>
+                <textarea
+                  value={newSession.next_action}
+                  onChange={(e) => setNewSession(prev => ({ ...prev, next_action: e.target.value }))}
+                  rows={3}
+                  placeholder="다음 상담이나 후속 조치가 있으면 입력하세요."
+                  className="w-full px-3 py-3 text-sm border border-input rounded-lg bg-background outline-none resize-none focus:ring-2 focus:ring-primary/10 focus:border-primary"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-border/60 bg-muted/10">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setIsAddingSession(false)}
+                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted rounded-lg transition-colors disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleCreateSession}
+                className="px-5 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/*
         NOTE(2026-08-26): 실데이터의 참여단계 값이 5단계 고정 파이프라인을 훨씬 벗어나
