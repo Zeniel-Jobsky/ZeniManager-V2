@@ -16,6 +16,7 @@ import {
 import { toast } from 'sonner';
 import { fetchClients, updateClient, deleteClient } from '@/lib/api';
 import { syncEmploymentSuccessCase } from '@/lib/employmentSuccessCase';
+import { needsClientFollowUp } from '@/lib/clientFollowUp';
 import type { ClientRow } from '@/lib/supabase';
 
 const PRIMARY = '#009C64';
@@ -27,11 +28,11 @@ function hasScore(client: ClientRow): boolean {
 }
 
 function needsFollowUp(client: ClientRow): boolean {
-  return client.retention_1m_yn === 'N';
+  return needsClientFollowUp(client);
 }
 
 function formatFollowUpStat(client: ClientRow): string {
-  return client.retention_1m_yn ?? '-';
+  return client.follow_up === true ? '후속 상담 필요' : client.retention_1m_yn ?? '-';
 }
 
 function isEmploymentCompleted(client: ClientRow): boolean {

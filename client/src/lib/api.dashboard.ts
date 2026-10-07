@@ -1,3 +1,4 @@
+import { needsClientFollowUp } from './clientFollowUp';
 import { isEmploymentCompletedStage } from '@shared/const';
 import {
   executeSupabaseRequest,
@@ -92,6 +93,7 @@ const CLIENT_SELECT_FIELDS = `
   retention_18m_date,
   retention_18m_yn,
   score,
+  follow_up,
   counsel_notes,
   created_at,
   updated_at
@@ -128,6 +130,7 @@ type LiveClientRecord = {
   retention_18m_date: string | null;
   retention_18m_yn: string | null;
   score: number | null;
+  follow_up?: boolean | null;
   counsel_notes: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -276,7 +279,7 @@ function liveClientToRow(row: LiveClientRecord): ClientRow {
     counselor_name: null,
     counselor_id: row.counselor_id ?? null,
     branch: null,
-    follow_up: null,
+    follow_up: row.follow_up ?? null,
     score: row.score ?? null,
     created_at: createdAt,
     updated_at: updatedAt,
@@ -407,10 +410,11 @@ export async function fetchDashboardStats(counselorId: string): Promise<Dashboar
     participation_stage: string | null;
     score: number | null;
     retention_1m_yn: string | null;
+    follow_up: boolean | null;
   }>('대시보드 통계 조회', (from, to) => {
     const query = sb()
       .from('clients')
-      .select('participation_stage, score, retention_1m_yn')
+      .select('participation_stage, score, retention_1m_yn, follow_up')
       .eq('counselor_id', scopedCounselorId)
       .range(from, to);
 
@@ -440,9 +444,7 @@ export async function fetchDashboardStats(counselorId: string): Promise<Dashboar
     totalClients: rows.length,
     inProgress: rows.filter(row => !isEmploymentCompletedStage(row.participation_stage)).length,
     employed: rows.filter(row => isEmploymentCompletedStage(row.participation_stage)).length,
-    followUpNeeded: rows.filter(
-      row => isEmploymentCompletedStage(row.participation_stage) && row.retention_1m_yn === 'N',
-    ).length,
+    followUpNeeded: rows.filter(needsClientFollowUp).length,
     averageScore: scores.length > 0
       ? Number((scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(1))
       : null,
