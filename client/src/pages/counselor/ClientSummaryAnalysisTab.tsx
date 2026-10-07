@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Award,
@@ -7,12 +7,17 @@ import {
   FileText,
   GraduationCap,
   Loader2,
+  RefreshCw,
   Sparkles,
   Target,
   Trash2,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  loadOrGenerateCounselingAnalysis,
+  type CounselingDataAnalysis,
+} from "@/lib/counselingAnalysis";
 import type { ClientRow } from "@/lib/supabase";
 import {
   analyzeDocumentFile,
@@ -69,6 +74,35 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
     useState<RecommendationResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingFilePath, setDeletingFilePath] = useState<string | null>(null);
+  const [counselingAnalysis, setCounselingAnalysis] =
+    useState<CounselingDataAnalysis | null>(null);
+  const [isCounselingAnalyzing, setIsCounselingAnalyzing] = useState(false);
+  const [counselingAnalysisError, setCounselingAnalysisError] =
+    useState<string | null>(null);
+
+  const runCounselingAnalysis = useCallback(
+    async (force = false) => {
+      setIsCounselingAnalyzing(true);
+      setCounselingAnalysisError(null);
+      try {
+        const result = await loadOrGenerateCounselingAnalysis(client, { force });
+        setCounselingAnalysis(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "상담 데이터 자동 분석에 실패했습니다.";
+        setCounselingAnalysisError(message);
+      } finally {
+        setIsCounselingAnalyzing(false);
+      }
+    },
+    [client]
+  );
+
+  useEffect(() => {
+    void runCounselingAnalysis(false);
+  }, [runCounselingAnalysis]);
 
   const completedAnalyses = useMemo(
     () =>
@@ -401,6 +435,131 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
 
   return (
     <div className="space-y-6">
+      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Sparkles size={18} style={{ color: PRIMARY }} />
+              상담 데이터 자동 분석
+            </div>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              상담 이력, 최신 구직준비도 설문, 상담자 기본정보를 읽어 현재 상태와
+              다음 상담 방향을 자동으로 정리합니다. 원본 데이터가 바뀌면 다시 분석합니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void runCounselingAnalysis(true)}
+            disabled={isCounselingAnalyzing}
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <RefreshCw
+              size={13}
+              className={isCounselingAnalyzing ? "animate-spin" : ""}
+            />
+            다시 분석
+          </button>
+        </div>
+
+        {isCounselingAnalyzing && !counselingAnalysis ? (
+          <div className="mt-5 flex items-center gap-2 rounded-lg bg-muted/30 p-4 text-sm text-muted-foreground">
+            <Loader2 size={15} className="animate-spin" />
+            상담 데이터 분석 중...
+          </div>
+        ) : null}
+
+        {counselingAnalysisError ? (
+          <div className="mt-5 flex items-start gap-2 rounded-lg bg-destructive/5 p-4 text-sm text-destructive">
+            <AlertCircle size={15} className="mt-0.5 shrink-0" />
+            <span>{counselingAnalysisError}</span>
+          </div>
+        ) : null}
+
+        {counselingAnalysis ? (
+          <div className="mt-5 space-y-4">
+            <div className="grid gap-4 lg:grid-cols-3">
+              <ScoreCard
+                title="구직 의지"
+                value={
+                  counselingAnalysis.jobWill.score == null
+                    ? counselingAnalysis.jobWill.level
+                    : `${counselingAnalysis.jobWill.level} · ${counselingAnalysis.jobWill.score}점`
+                }
+                detail={counselingAnalysis.jobWill.reason}
+              />
+              <ScoreCard
+                title="취업 준비도"
+                value={
+                  counselingAnalysis.readiness.score == null
+                    ? counselingAnalysis.readiness.level
+                    : `${counselingAnalysis.readiness.level} · ${counselingAnalysis.readiness.score}점`
+                }
+                detail={counselingAnalysis.readiness.reason}
+              />
+              <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="text-sm font-semibold text-foreground">분석 근거</div>
+                <div className="mt-4 space-y-2 text-sm">
+                  <InfoRow
+                    label="상담 이력"
+                    value={`${counselingAnalysis.sourceInfo.sessionCount}건`}
+                  />
+                  <InfoRow
+                    label="최신 상담"
+                    value={counselingAnalysis.sourceInfo.latestSessionDate ?? "없음"}
+                  />
+                  <InfoRow
+                    label="최신 설문"
+                    value={counselingAnalysis.sourceInfo.surveyDate ?? "없음"}
+                  />
+                  <InfoRow
+                    label="분석 방식"
+                    value={
+                      counselingAnalysis.sourceInfo.model === "rule-based-v1"
+                        ? "규칙 기반"
+                        : "AI + 규칙 기반"
+                    }
+                  />
+                </div>
+              </section>
+            </div>
+
+            <AnalysisCard
+              title="종합 요약"
+              icon={<Sparkles size={16} style={{ color: PRIMARY }} />}
+              value={counselingAnalysis.summary}
+              multiline
+            />
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <AnalysisCard
+                title="주요 강점"
+                icon={<Award size={16} style={{ color: PRIMARY }} />}
+                value={renderBulletList(counselingAnalysis.strengths)}
+                multiline
+              />
+              <AnalysisCard
+                title="취업 장애요인"
+                icon={<AlertCircle size={16} style={{ color: PRIMARY }} />}
+                value={renderBulletList(counselingAnalysis.barriers)}
+                multiline
+              />
+              <AnalysisCard
+                title="상담 권고사항"
+                icon={<Target size={16} style={{ color: PRIMARY }} />}
+                value={renderBulletList(counselingAnalysis.recommendations)}
+                multiline
+              />
+              <AnalysisCard
+                title="다음 상담 액션"
+                icon={<Briefcase size={16} style={{ color: PRIMARY }} />}
+                value={renderBulletList(counselingAnalysis.nextActions)}
+                multiline
+              />
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div
           onDragOver={event => {
@@ -429,11 +588,11 @@ export function ClientSummaryAnalysisTab({ client }: { client: ClientRow }) {
                 문서 업로드
               </div>
               <h3 className="text-base font-semibold text-foreground">
-                요약 및 분석 자료 추가
+                문서 기반 추가 분석 자료
               </h3>
               <p className="text-sm leading-6 text-muted-foreground">
-                드래그 앤 드롭 또는 직접 선택으로 문서를 추가하면 텍스트를
-                추출해 AI 요약, 희망 직업, 자격증, 부가 스펙, 추천 직종을
+                상담 데이터 자동 분석과 별도로 이력서·자기소개서 등 문서를 추가하면
+                텍스트를 추출해 AI 요약, 희망 직업, 자격증, 부가 스펙, 추천 직종을
                 정리합니다.
               </p>
             </div>
@@ -756,6 +915,12 @@ function StatusBadge({ status }: { status: UploadItem["status"] }) {
 
 function renderList(values: string[]): string {
   return values.length > 0 ? values.join("\n") : "정보 없음";
+}
+
+function renderBulletList(values: string[]): string {
+  return values.length > 0
+    ? values.map(value => `• ${value}`).join("\n")
+    : "정보 없음";
 }
 
 function renderQualificationsSafe(
